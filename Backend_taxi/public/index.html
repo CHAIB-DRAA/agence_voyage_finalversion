@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>حجز عمرة | Demande de Devis</title>
+    <style>
+        :root { --primary: #F3C764; --dark: #050B14; --light: #f8f9fa; --border: #e9ecef; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--light); margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 700px; margin: 0 auto; background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); }
+        
+        .header { text-align: center; margin-bottom: 40px; border-bottom: 3px solid var(--primary); padding-bottom: 20px; }
+        h1 { color: var(--dark); margin: 0; font-size: 28px; font-weight: 800; }
+        .subtitle { color: #666; font-size: 16px; margin-top: 8px; }
+
+        .section-title { font-size: 18px; font-weight: bold; color: var(--primary); margin-top: 30px; margin-bottom: 15px; border-bottom: 1px solid var(--border); padding-bottom: 5px; }
+
+        .form-group { margin-bottom: 20px; }
+        .row { display: flex; gap: 15px; }
+        .col { flex: 1; }
+        
+        label { display: block; margin-bottom: 8px; font-weight: 600; color: var(--dark); font-size: 14px; }
+        input, select, textarea { width: 100%; padding: 14px; border: 2px solid var(--border); border-radius: 10px; box-sizing: border-box; font-size: 16px; background: #fff; transition: 0.3s; }
+        input:focus, select:focus, textarea:focus { border-color: var(--primary); outline: none; }
+        
+        .btn { background-color: var(--dark); color: var(--primary); width: 100%; padding: 18px; border: none; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top: 20px; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        
+        .success-message { display: none; text-align: center; background: #d4edda; color: #155724; padding: 30px; border-radius: 15px; border: 1px solid #c3e6cb; }
+        
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid var(--primary); border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; margin: 20px auto; display: none; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <h1>استمارة طلب عمرة</h1>
+        <div class="subtitle">Veuillez remplir vos dates pour recevoir un devis personnalisé</div>
+    </div>
+
+    <form id="quoteForm">
+        
+        <!-- INFO CLIENT -->
+        <div class="section-title">👤 معلومات شخصية (Informations)</div>
+        <div class="form-group">
+            <label>الاسم الكامل (Nom Complet)</label>
+            <input type="text" id="clientName" required placeholder="الاسم واللقب">
+        </div>
+        <div class="row">
+            <div class="col">
+                <label>رقم الهاتف (Tél)</label>
+                <input type="tel" id="clientPhone" required placeholder="05 XX XX XX XX">
+            </div>
+            <div class="col">
+                <label>عدد الأشخاص (Nombre)</label>
+                <input type="number" id="numberOfPeople" value="1" min="1" required>
+            </div>
+        </div>
+
+        <!-- VOYAGE -->
+        <div class="section-title">✈️ تفاصيل الرحلة (Voyage)</div>
+        <div class="row">
+            <div class="col">
+                <label>الوجهة (Arrivée)</label>
+                <select id="destination">
+                    <option value="مكة">مكة المكرمة</option>
+                    <option value="المدينة">المدينة المنورة</option>
+                    <option value="جدة">جدة</option>
+                </select>
+            </div>
+            <div class="col">
+                <label>الفترة (Période)</label>
+                <select id="period">
+                    <!-- Rempli par JS -->
+                </select>
+            </div>
+        </div>
+
+        <!-- DATES SOUHAITÉES (Sans choix d'hôtel) -->
+        <div class="section-title">📅 التواريخ المقترحة (Dates souhaitées)</div>
+        
+        <div class="form-group">
+            <label>المدينة المنورة (Médine)</label>
+            <div class="row">
+                <div class="col"><label style="font-weight:normal; color:#666">تاريخ الوصول (Arrivée)</label><input type="date" id="dateMedinaIn"></div>
+                <div class="col"><label style="font-weight:normal; color:#666">تاريخ المغادرة (Départ)</label><input type="date" id="dateMedinaOut"></div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>مكة المكرمة (Makkah)</label>
+            <div class="row">
+                <div class="col"><label style="font-weight:normal; color:#666">تاريخ الوصول (Arrivée)</label><input type="date" id="dateMakkahIn"></div>
+                <div class="col"><label style="font-weight:normal; color:#666">تاريخ المغادرة (Départ)</label><input type="date" id="dateMakkahOut"></div>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>تفضيلات الفنادق / ملاحظات (Préférences)</label>
+            <textarea id="notes" rows="3" placeholder="Ex: Hôtel 5 étoiles proche du Haram, Vue Kaaba, Chambre Quadruple..."></textarea>
+        </div>
+
+        <div class="loader" id="loader"></div>
+        <button type="submit" class="btn" id="submitBtn">إرسال الطلب (Envoyer)</button>
+    </form>
+
+    <div id="success" class="success-message">
+        <h2>✅ تم استلام طلبك بنجاح!</h2>
+        <p>سيقوم فريقنا باقتراح الفنادق المناسبة والاتصال بكم قريباً.</p>
+    </div>
+</div>
+
+<script>
+    // CHARGEMENT DES DONNÉES (Seulement les Settings, plus les hôtels)
+    document.addEventListener('DOMContentLoaded', async () => {
+        try {
+            const resSettings = await fetch('/settings');
+            const settings = await resSettings.json();
+            
+            const periodSelect = document.getElementById('period');
+            if (settings.periods && settings.periods.length > 0) {
+                settings.periods.forEach(p => {
+                    periodSelect.innerHTML += `<option value="${p.label}">${p.label}</option>`;
+                });
+            } else {
+                periodSelect.innerHTML += `<option value="رمضان">رمضان</option><option value="شوال">شوال</option>`;
+            }
+        } catch (e) {
+            console.error("Erreur chargement settings", e);
+        }
+    });
+
+    // ENVOI DU FORMULAIRE
+    document.getElementById('quoteForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const btn = document.getElementById('submitBtn');
+        const loader = document.getElementById('loader');
+        
+        btn.style.display = 'none';
+        loader.style.display = 'block';
+
+        // Formatage date JJ/MM/AAAA
+        const formatDate = (val) => val ? val.split('-').reverse().join('/') : '';
+
+        const data = {
+            clientName: document.getElementById('clientName').value,
+            clientPhone: document.getElementById('clientPhone').value,
+            destination: document.getElementById('destination').value,
+            period: document.getElementById('period').value,
+            numberOfPeople: document.getElementById('numberOfPeople').value,
+            
+            // On envoie des champs hôtels vides, l'agence les remplira
+            hotelMakkah: '',
+            hotelMedina: '',
+            
+            dates: {
+                medinaCheckIn: formatDate(document.getElementById('dateMedinaIn').value),
+                medinaCheckOut: formatDate(document.getElementById('dateMedinaOut').value),
+                makkahCheckIn: formatDate(document.getElementById('dateMakkahIn').value),
+                makkahCheckOut: formatDate(document.getElementById('dateMakkahOut').value),
+            },
+            
+            notes: document.getElementById('notes').value,
+            status: 'pending',
+            createdBy: 'Client (Web)',
+            
+            prices: { single: '0', double: '0', triple: '0', quad: '0' },
+            quantities: { single: '0', double: '0', triple: '0', quad: '0' }
+        };
+
+        try {
+            const response = await fetch('/quotes/public', { 
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+
+            if (response.ok) {
+                document.getElementById('quoteForm').style.display = 'none';
+                document.getElementById('success').style.display = 'block';
+            } else {
+                alert('Erreur serveur.');
+                btn.style.display = 'block';
+            }
+        } catch (error) {
+            alert('Erreur de connexion.');
+            btn.style.display = 'block';
+        } finally {
+            loader.style.display = 'none';
+        }
+    });
+</script>
+
+</body>
+</html>

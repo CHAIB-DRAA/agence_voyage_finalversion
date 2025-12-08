@@ -6,43 +6,64 @@ import {
 import { Feather } from '@expo/vector-icons';
 import api from '../utils/api';
 
+// Structure vide alignée sur votre modèle Mongoose
 const emptyHotel = {
   id: null,
   name: '',
   city: 'Makkah', 
   distance: '',
   stars: '0',
-  prices: { single: '0', double: '0', triple: '0', quad: '0' }
+  // Prix de base
+  prices: { single: '0', double: '0', triple: '0', quad: '0', penta: '0', suite: '0' },
+  // Prix saisonniers (Tableau d'objets)
+  seasonalPrices: [] 
 };
+
+// Configuration pour générer les champs automatiquement
+const ROOM_TYPES = [
+  { key: 'double', label: 'Double (ثنائية)' },
+  { key: 'triple', label: 'Triple (ثلاثية)' },
+  { key: 'quad', label: 'Quad (رباعية)' },
+  { key: 'penta', label: 'Penta (خماسية)' }, // 5 lits
+  { key: 'suite', label: 'Suite (جناح)' },
+  { key: 'single', label: 'Single (فردية)' },
+];
 
 export default function AdminHotels({ navigation, route }) {
   const [hotels, setHotels] = useState([]);
+  const [periodsList, setPeriodsList] = useState([]); // Liste des saisons dispos (Settings)
   const [modalVisible, setModalVisible] = useState(false);
   const [currentHotel, setCurrentHotel] = useState(emptyHotel);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTypes, setActiveTypes] = useState({}); // Pour cocher/décocher les types dispos
+  
+  // Onglets du modal
+  const [modalTab, setModalTab] = useState('base'); 
 
-  // --- SÉCURITÉ : VÉRIFICATION DU RÔLE ---
+  // Sécurité
   const userRole = route.params?.userRole || 'user';
   const isAdmin = userRole === 'admin';
 
   useEffect(() => {
-    loadHotels();
+    loadData();
   }, []);
 
-  const loadHotels = async () => {
+  const loadData = async () => {
     setLoading(true);
-    const data = await api.getHotels();
-    setHotels(data);
+    try {
+      const [hotelsData, settingsData] = await Promise.all([
+        api.getHotels(),
+        api.getSettings()
+      ]);
+      setHotels(hotelsData);
+      setPeriodsList(settingsData.periods || []);
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
   const handleSave = async () => {
-    if (!isAdmin) {
-      Alert.alert('Accès refusé', 'Seuls les administrateurs peuvent modifier les données.');
-      return;
-    }
-
+    if (!isAdmin) return;
     if (!currentHotel.name || !currentHotel.distance) {
       Alert.alert('Erreur', 'Le nom et la distance sont obligatoires');
       return;
@@ -52,7 +73,7 @@ export default function AdminHotels({ navigation, route }) {
     try {
       await api.saveHotel(currentHotel);
       setModalVisible(false);
-      loadHotels(); 
+      loadData(); 
       Alert.alert('Succès', 'Hôtel enregistré');
     } catch (e) {
       Alert.alert('Erreur', 'Impossible de sauvegarder');
@@ -63,48 +84,84 @@ export default function AdminHotels({ navigation, route }) {
 
   const handleDelete = (id) => {
     if (!isAdmin) return;
-
-    Alert.alert(
-      "Supprimer ?",
-      "Cette action est irréversible.",
-      [
-        { text: "Annuler", style: "cancel" },
-        { 
-          text: "Supprimer", 
-          style: "destructive", 
-          onPress: async () => {
-            await api.deleteHotel(id);
-            loadHotels();
-          } 
-        }
-      ]
-    );
+    Alert.alert("Supprimer ?", "Irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Supprimer", style: "destructive", onPress: async () => { await api.deleteHotel(id); loadData(); } }
+    ]);
   };
 
   const openEdit = (hotel) => {
-    if (!isAdmin) {
-      return; 
-    }
-    setCurrentHotel({
+    if (!isAdmin) return;
+    
+    // Fusion pour garantir la structure complète
+    const hotelData = {
       ...emptyHotel,
       ...hotel,
       prices: { ...emptyHotel.prices, ...(hotel.prices || {}) },
-      stars: String(hotel.stars || '0')
+      seasonalPrices: hotel.seasonalPrices || []
+    };
+
+    setCurrentHotel(hotelData);
+    
+    // Déterminer les cases à cocher (si prix > 0)
+    const activeState = {};
+    ROOM_TYPES.forEach(type => {
+      const price = hotelData.prices[type.key];
+      activeState[type.key] = price && price !== '0';
     });
+    setActiveTypes(activeState);
+
+    setModalTab('base');
     setModalVisible(true);
   };
 
   const openNew = () => {
     if (!isAdmin) return;
     setCurrentHotel(emptyHotel);
+    setActiveTypes({});
+    setModalTab('base');
     setModalVisible(true);
   };
 
-  const updatePrice = (type, value) => {
-    setCurrentHotel(prev => ({
-      ...prev,
-      prices: { ...prev.prices, [type]: value }
-    }));
+  // --- GESTION PRIX DE BASE ---
+  const toggleRoomType = (key) => {
+    const isActive = activeTypes[key];
+    setActiveTypes(prev => ({ ...prev, [key]: !isActive }));
+    if (isActive) {
+      // Si décoché, prix = 0
+      setCurrentHotel(prev => ({ ...prev, prices: { ...prev.prices, [key]: '0' } }));
+    }
+  };
+
+  const updateBasePrice = (type, value) => {
+    setCurrentHotel(prev => ({ ...prev, prices: { ...prev.prices, [type]: value } }));
+  };
+
+  // --- GESTION PRIX SAISONNIERS ---
+  const addSeason = (periodName) => {
+    if (currentHotel.seasonalPrices.find(p => p.periodName === periodName)) {
+      Alert.alert('Info', 'Période déjà ajoutée.');
+      return;
+    }
+    // On initialise les prix de la saison avec les prix de base pour gagner du temps
+    const newSeason = {
+      periodName,
+      prices: { ...currentHotel.prices } 
+    };
+    setCurrentHotel(prev => ({ ...prev, seasonalPrices: [...prev.seasonalPrices, newSeason] }));
+  };
+
+  const removeSeason = (index) => {
+    const updated = [...currentHotel.seasonalPrices];
+    updated.splice(index, 1);
+    setCurrentHotel(prev => ({ ...prev, seasonalPrices: updated }));
+  };
+
+  const updateSeasonPrice = (seasonIndex, type, value) => {
+    const updated = [...currentHotel.seasonalPrices];
+    // On met à jour le prix spécifique dans l'objet imbriqué
+    updated[seasonIndex].prices[type] = value;
+    setCurrentHotel(prev => ({ ...prev, seasonalPrices: updated }));
   };
 
   const renderItem = ({ item }) => (
@@ -113,38 +170,26 @@ export default function AdminHotels({ navigation, route }) {
         <View style={{flex: 1}}>
           <Text style={styles.hotelName}>{item.name}</Text>
           <View style={styles.badgeRow}>
-            {/* Gestion des 3 villes pour le badge */}
-            <View style={[
-              styles.badge, 
-              item.city === 'Makkah' ? styles.badgeMakkah : 
-              item.city === 'Medina' ? styles.badgeMedina : styles.badgeJeddah
-            ]}>
-              <Text style={styles.badgeText}>
-                {item.city === 'Makkah' ? 'مكة' : 
-                 item.city === 'Medina' ? 'المدينة' : 'جدة'}
-              </Text>
+            <View style={[styles.badge, item.city === 'Makkah' ? styles.badgeMakkah : (item.city === 'Medina' ? styles.badgeMedina : styles.badgeJeddah)]}>
+              <Text style={styles.badgeText}>{item.city === 'Makkah' ? 'مكة' : (item.city === 'Medina' ? 'المدينة' : 'جدة')}</Text>
             </View>
             <Text style={styles.subText}>⭐ {item.stars} • 📍 {item.distance}</Text>
           </View>
         </View>
-        
         {isAdmin && (
           <View style={styles.actions}>
-            <TouchableOpacity onPress={() => openEdit(item)} style={styles.iconBtn}>
-              <Feather name="edit-2" size={20} color="#F3C764" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.iconBtn}>
-              <Feather name="trash-2" size={20} color="#E74C3C" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => openEdit(item)} style={styles.iconBtn}><Feather name="edit-2" size={20} color="#F3C764" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.iconBtn}><Feather name="trash-2" size={20} color="#E74C3C" /></TouchableOpacity>
           </View>
         )}
-
       </View>
-      
       <View style={styles.priceGrid}>
-        <Text style={styles.priceText}>2: <Text style={{color:'#FFF'}}>{item.prices?.double || '-'}</Text></Text>
-        <Text style={styles.priceText}>3: <Text style={{color:'#FFF'}}>{item.prices?.triple || '-'}</Text></Text>
-        <Text style={styles.priceText}>4: <Text style={{color:'#FFF'}}>{item.prices?.quad || '-'}</Text></Text>
+        <Text style={styles.priceText}>Base Double: {item.prices?.double} DA</Text>
+        {item.seasonalPrices && item.seasonalPrices.length > 0 && (
+          <Text style={[styles.priceText, {color: '#2ECC71', marginTop: 4}]}>
+            + {item.seasonalPrices.length} tarifs saisonniers (Ramadan...)
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -152,111 +197,117 @@ export default function AdminHotels({ navigation, route }) {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#050B14" />
-      
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Feather name="arrow-right" size={24} color="#F3C764" />
-        </TouchableOpacity>
-        
-        <Text style={styles.headerTitle}>
-          {isAdmin ? 'Gestion des Hôtels' : 'Liste des Hôtels'}
-        </Text>
-        
-        {isAdmin ? (
-          <TouchableOpacity onPress={openNew} style={styles.addButton}>
-            <Feather name="plus" size={24} color="#050B14" />
-          </TouchableOpacity>
-        ) : (
-          <View style={{width: 40}} /> 
-        )}
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}><Feather name="arrow-right" size={24} color="#F3C764" /></TouchableOpacity>
+        <Text style={styles.headerTitle}>Hôtels & Saisons</Text>
+        {isAdmin && <TouchableOpacity onPress={openNew} style={styles.addButton}><Feather name="plus" size={24} color="#050B14" /></TouchableOpacity>}
       </View>
 
-      <FlatList
-        data={hotels}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-        refreshing={loading}
-        onRefresh={loadHotels}
-        ListEmptyComponent={
-          !loading && <Text style={styles.emptyText}>Aucun hôtel enregistré.</Text>
-        }
-      />
+      <FlatList data={hotels} keyExtractor={item => item.id} renderItem={renderItem} contentContainerStyle={{ padding: 20 }} />
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>{currentHotel.id ? 'Modifier' : 'Nouveau'}</Text>
-            <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.closeBtn}>
-              <Feather name="x" size={24} color="#FFF" />
-            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setModalVisible(false)}><Feather name="x" size={24} color="#FFF" /></TouchableOpacity>
           </View>
           
+          <View style={styles.modalTabs}>
+            <TouchableOpacity onPress={() => setModalTab('base')} style={[styles.modalTab, modalTab === 'base' && styles.modalTabActive]}>
+              <Text style={[styles.modalTabText, modalTab === 'base' && {color: '#050B14'}]}>Infos & Base</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setModalTab('seasons')} style={[styles.modalTab, modalTab === 'seasons' && styles.modalTabActive]}>
+              <Text style={[styles.modalTabText, modalTab === 'seasons' && {color: '#050B14'}]}>Saisons ({currentHotel.seasonalPrices.length})</Text>
+            </TouchableOpacity>
+          </View>
+
           <ScrollView contentContainerStyle={{ padding: 20 }}>
             
-            {/* SÉLECTEUR VILLE (Avec Jeddah ajouté) */}
-            <View style={styles.row}>
-              <TouchableOpacity 
-                style={[styles.cityBtn, currentHotel.city === 'Makkah' && styles.cityBtnActive]}
-                onPress={() => setCurrentHotel({...currentHotel, city: 'Makkah'})}
-              >
-                <Text style={[styles.cityText, currentHotel.city === 'Makkah' && {color:'#050B14'}]}>مكة</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.cityBtn, currentHotel.city === 'Medina' && styles.cityBtnActive]}
-                onPress={() => setCurrentHotel({...currentHotel, city: 'Medina'})}
-              >
-                <Text style={[styles.cityText, currentHotel.city === 'Medina' && {color:'#050B14'}]}>المدينة</Text>
-              </TouchableOpacity>
-              {/* Ajout de Jeddah */}
-              <TouchableOpacity 
-                style={[styles.cityBtn, currentHotel.city === 'Jeddah' && styles.cityBtnActive]}
-                onPress={() => setCurrentHotel({...currentHotel, city: 'Jeddah'})}
-              >
-                <Text style={[styles.cityText, currentHotel.city === 'Jeddah' && {color:'#050B14'}]}>جدة</Text>
-              </TouchableOpacity>
-            </View>
+            {modalTab === 'base' ? (
+              <>
+                {/* --- ONGLET BASE --- */}
+                <View style={styles.row}>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Makkah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Makkah'})}><Text style={styles.cityText}>Makkah</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Medina' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Medina'})}><Text style={styles.cityText}>Medina</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Jeddah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Jeddah'})}><Text style={styles.cityText}>Jeddah</Text></TouchableOpacity>
+                </View>
 
-            <Text style={styles.label}>Nom</Text>
-            <TextInput style={styles.input} value={currentHotel.name} onChangeText={t => setCurrentHotel({...currentHotel, name: t})} placeholder="Nom hôtel" placeholderTextColor="#556" textAlign="right"/>
+                <TextInput style={styles.input} value={currentHotel.name} onChangeText={t => setCurrentHotel({...currentHotel, name: t})} placeholder="Nom hôtel" placeholderTextColor="#556" textAlign="right"/>
+                <View style={styles.row}>
+                  <TextInput style={[styles.input, {flex:1}]} value={currentHotel.distance} onChangeText={t => setCurrentHotel({...currentHotel, distance: t})} placeholder="Distance" placeholderTextColor="#556"/>
+                  <TextInput style={[styles.input, {flex:1, marginLeft:10}]} value={currentHotel.stars} onChangeText={t => setCurrentHotel({...currentHotel, stars: t})} placeholder="Étoiles" keyboardType="numeric" placeholderTextColor="#556"/>
+                </View>
 
-            <View style={styles.row}>
-              <View style={{flex:1, marginRight:10}}>
-                <Text style={styles.label}>Distance</Text>
-                <TextInput style={styles.input} value={currentHotel.distance} onChangeText={t => setCurrentHotel({...currentHotel, distance: t})} placeholder="50m" placeholderTextColor="#556" textAlign="right"/>
-              </View>
-              <View style={{flex:1}}>
-                <Text style={styles.label}>Étoiles</Text>
-                <TextInput style={styles.input} value={currentHotel.stars} onChangeText={t => setCurrentHotel({...currentHotel, stars: t})} keyboardType="numeric" placeholder="0-5" placeholderTextColor="#556" textAlign="right"/>
-              </View>
-            </View>
+                <View style={styles.divider} />
+                <Text style={[styles.sectionTitle, {color:'#F3C764'}]}>Prix de Base (Hors Saison)</Text>
+                
+                {ROOM_TYPES.map((type) => (
+                  <View key={type.key} style={styles.roomRow}>
+                    <TouchableOpacity style={[styles.checkboxContainer, activeTypes[type.key] && styles.checkboxActive]} onPress={() => toggleRoomType(type.key)}>
+                      <Feather name={activeTypes[type.key] ? "check-square" : "square"} size={24} color={activeTypes[type.key] ? "#050B14" : "#666"} />
+                      <Text style={[styles.checkboxLabel, activeTypes[type.key] && {color:'#050B14', fontWeight:'bold'}]}>{type.label}</Text>
+                    </TouchableOpacity>
+                    {activeTypes[type.key] && (
+                      <View style={styles.priceInputContainer}>
+                        <TextInput style={styles.priceInput} value={currentHotel.prices[type.key]} onChangeText={t => updateBasePrice(type.key, t)} keyboardType="numeric" placeholder="0" placeholderTextColor="#556"/>
+                        <Text style={{color:'#F3C764', fontSize:12, marginLeft:5}}>DA</Text>
+                      </View>
+                    )}
+                  </View>
+                ))}
+              </>
+            ) : (
+              <>
+                {/* --- ONGLET SAISONS --- */}
+                <Text style={{color:'#888', marginBottom:15, fontSize:13, textAlign:'center'}}>
+                   Définissez ici les tarifs pour le Ramadan, Mawlid, etc. {"\n"}
+                   Si une chambre est à 0, le prix de base sera utilisé.
+                </Text>
 
-            <Text style={[styles.sectionTitle, {color:'#F3C764'}]}>Tarifs par NUIT (DA)</Text>
-            
-            <View style={styles.row}>
-              <View style={{flex:1, marginRight:10}}>
-                <Text style={styles.label}>Double</Text>
-                <TextInput style={styles.input} value={currentHotel.prices.double} onChangeText={t => updatePrice('double', t)} keyboardType="numeric" placeholder="0" textAlign="right"/>
-              </View>
-              <View style={{flex:1}}>
-                <Text style={styles.label}>Triple</Text>
-                <TextInput style={styles.input} value={currentHotel.prices.triple} onChangeText={t => updatePrice('triple', t)} keyboardType="numeric" placeholder="0" textAlign="right"/>
-              </View>
-            </View>
-            <View style={styles.row}>
-              <View style={{flex:1, marginRight:10}}>
-                <Text style={styles.label}>Quad</Text>
-                <TextInput style={styles.input} value={currentHotel.prices.quad} onChangeText={t => updatePrice('quad', t)} keyboardType="numeric" placeholder="0" textAlign="right"/>
-              </View>
-              <View style={{flex:1}}>
-                <Text style={styles.label}>Single</Text>
-                <TextInput style={styles.input} value={currentHotel.prices.single} onChangeText={t => updatePrice('single', t)} keyboardType="numeric" placeholder="0" textAlign="right"/>
-              </View>
-            </View>
+                {currentHotel.seasonalPrices.map((season, seasonIndex) => (
+                  <View key={seasonIndex} style={styles.seasonCard}>
+                    <View style={styles.seasonHeader}>
+                      <Text style={styles.seasonTitle}>{season.periodName}</Text>
+                      <TouchableOpacity onPress={() => removeSeason(seasonIndex)}><Feather name="trash-2" size={20} color="#E74C3C" /></TouchableOpacity>
+                    </View>
+                    
+                    {/* Grille de prix pour la saison */}
+                    <View style={styles.seasonGrid}>
+                        {ROOM_TYPES.map((type) => (
+                           <View key={type.key} style={styles.seasonInputWrapper}>
+                              <Text style={styles.seasonLabel}>{type.key.charAt(0).toUpperCase() + type.key.slice(1)}</Text>
+                              <TextInput 
+                                style={styles.seasonInput} 
+                                value={season.prices[type.key]} 
+                                onChangeText={t => updateSeasonPrice(seasonIndex, type.key, t)} 
+                                keyboardType="numeric" 
+                                placeholder="0"
+                                placeholderTextColor="#556"
+                              />
+                           </View>
+                        ))}
+                    </View>
+                  </View>
+                ))}
+
+                <Text style={{color:'#FFF', marginTop:20, marginBottom:10, fontWeight:'bold'}}>Ajouter une période :</Text>
+                <View style={{flexDirection:'row', flexWrap:'wrap', gap:10}}>
+                  {periodsList.length > 0 ? periodsList.map(p => (
+                    <TouchableOpacity key={p._id} style={styles.addSeasonBtn} onPress={() => addSeason(p.label)}>
+                      <Text style={{color:'#050B14', fontSize:12, fontWeight:'bold'}}>{p.label}</Text>
+                      <Feather name="plus" size={12} color="#050B14" style={{marginLeft:4}}/>
+                    </TouchableOpacity>
+                  )) : (
+                    <Text style={{color:'#666'}}>Aucune période configurée dans les réglages.</Text>
+                  )}
+                </View>
+              </>
+            )}
 
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
-              {saving ? <ActivityIndicator color="#050B14" /> : <Text style={styles.saveText}>Enregistrer l'hôtel</Text>}
+              {saving ? <ActivityIndicator color="#050B14" /> : <Text style={styles.saveText}>Enregistrer</Text>}
             </TouchableOpacity>
+
           </ScrollView>
         </View>
       </Modal>
@@ -270,42 +321,54 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#F3C764', fontSize: 20, fontWeight: 'bold' },
   addButton: { backgroundColor: '#F3C764', padding: 8, borderRadius: 8 },
   backButton: { padding: 8 },
-  
-  emptyText: { color: '#888', textAlign: 'center', marginTop: 50, fontSize: 16 },
-
   card: { backgroundColor: '#101A2D', padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#1F2937' },
   cardHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'flex-start' },
   hotelName: { color: '#FFF', fontSize: 18, fontWeight: 'bold', textAlign: 'right', marginBottom: 5 },
   badgeRow: { flexDirection: 'row-reverse', alignItems: 'center', gap: 10 },
   badge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 4 },
-  
-  // Styles des Badges Villes
   badgeMakkah: { backgroundColor: 'rgba(243, 199, 100, 0.2)' },
   badgeMedina: { backgroundColor: 'rgba(46, 204, 113, 0.2)' },
-  badgeJeddah: { backgroundColor: 'rgba(52, 152, 219, 0.2)' }, // Nouveau badge bleu pour Jeddah
-
+  badgeJeddah: { backgroundColor: 'rgba(52, 152, 219, 0.2)' },
   badgeText: { color: '#FFF', fontSize: 12 },
   subText: { color: '#888', fontSize: 12 },
   actions: { flexDirection: 'row', gap: 15 },
   iconBtn: { padding: 5 },
-  priceGrid: { flexDirection: 'row-reverse', justifyContent: 'space-around', marginTop: 15, paddingTop: 10, borderTopWidth: 1, borderColor: '#1F2937' },
-  priceText: { color: '#AAA', fontSize: 12 },
-
+  priceGrid: { marginTop: 10 },
+  priceText: { color: '#AAA', fontSize: 12, textAlign: 'right' },
+  
   modalContainer: { flex: 1, backgroundColor: '#050B14' },
   modalHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderColor: '#1F2937', marginTop: Platform.OS === 'ios' ? 20 : 0 },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
-  closeBtn: { padding: 5 },
+  modalTabs: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#333' },
+  modalTab: { flex: 1, padding: 15, alignItems: 'center' },
+  modalTabActive: { backgroundColor: '#F3C764' },
+  modalTabText: { color: '#888', fontWeight: 'bold' },
   
   row: { flexDirection: 'row-reverse', gap: 10, marginBottom: 15 },
-  cityBtn: { flex: 1, padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#F3C764', alignItems: 'center' },
+  cityBtn: { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#F3C764', alignItems: 'center', marginHorizontal: 2 },
   cityBtnActive: { backgroundColor: '#F3C764' },
-  cityText: { color: '#F3C764', fontWeight: 'bold' },
+  cityText: { fontSize: 12, fontWeight: 'bold' },
+  input: { backgroundColor: '#101A2D', color: '#FFF', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#333' },
+  sectionTitle: { color: '#F3C764', fontSize: 16, marginBottom: 10, textAlign: 'right' },
   
-  label: { color: '#8A95A5', marginBottom: 6, textAlign: 'right', fontSize: 13 },
-  input: { backgroundColor: '#101A2D', color: '#FFF', padding: 12, borderRadius: 8, textAlign: 'right', borderWidth: 1, borderColor: '#1F2937', fontSize: 15 },
-  
-  divider: { height: 1, backgroundColor: '#1F2937', marginVertical: 20 },
-  sectionTitle: { fontSize: 16, fontWeight: 'bold', textAlign: 'right', marginBottom: 5 },
-  saveBtn: { backgroundColor: '#F3C764', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 30, marginBottom: 50 },
+  // Styles Checkbox Base
+  roomRow: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 12, justifyContent: 'space-between' },
+  checkboxContainer: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 10, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
+  checkboxActive: { backgroundColor: '#F3C764', borderColor: '#F3C764' },
+  checkboxLabel: { color: '#888', fontSize: 14 },
+  priceInputContainer: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', marginLeft: 10 },
+  priceInput: { flex: 1, backgroundColor: '#101A2D', color: '#FFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', textAlign:'center' },
+
+  // Styles Saisons
+  seasonCard: { backgroundColor: '#1A2634', padding: 15, borderRadius: 10, marginBottom: 15, borderWidth: 1, borderColor: '#333' },
+  seasonHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 15, borderBottomWidth:1, borderColor:'#333', paddingBottom:5 },
+  seasonTitle: { color: '#F3C764', fontWeight: 'bold', fontSize: 16 },
+  seasonGrid: { flexDirection: 'row-reverse', flexWrap: 'wrap', gap: 10 },
+  seasonInputWrapper: { width: '30%', marginBottom: 10 },
+  seasonLabel: { color: '#AAA', fontSize: 10, marginBottom: 2, textAlign:'right' },
+  seasonInput: { backgroundColor: '#09121F', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#444', textAlign: 'center', fontSize: 12 },
+  addSeasonBtn: { backgroundColor: '#3498DB', padding: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
+
+  saveBtn: { backgroundColor: '#F3C764', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 20, marginBottom: 50 },
   saveText: { color: '#050B14', fontWeight: 'bold', fontSize: 16 },
 });

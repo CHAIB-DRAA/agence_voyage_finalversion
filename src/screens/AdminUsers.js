@@ -10,7 +10,7 @@ export default function AdminUsers({ route, navigation }) {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
   
-  // États du Modal (Formulaire unifié Création/Édition)
+  // États du Modal (Formulaire unifié)
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState(null); // Null = Création, Objet = Modification
   
@@ -20,7 +20,7 @@ export default function AdminUsers({ route, navigation }) {
   const [isAdminRole, setIsAdminRole] = useState(false);
   const [saving, setSaving] = useState(false);
   
-  // Sécurité : Identité de l'admin connecté
+  // SÉCURITÉ : On récupère l'admin connecté via la navigation
   const currentAdmin = route.params?.username || 'admin';
 
   useEffect(() => {
@@ -31,7 +31,8 @@ export default function AdminUsers({ route, navigation }) {
     setLoading(true);
     try {
       const data = await api.getUsers();
-      setUsers(data);
+      // Si data est vide ou erreur, c'est peut-être un souci de droits, mais pour la lecture on laisse passer
+      setUsers(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -52,22 +53,39 @@ export default function AdminUsers({ route, navigation }) {
   const openEdit = (user) => {
     setEditingUser(user);
     setFormUsername(user.username);
-    setFormPassword(''); // On laisse vide par sécurité (le mot de passe n'est pas affiché)
+    setFormPassword(''); 
     setIsAdminRole(user.role === 'admin');
     setModalVisible(true);
+  };
+
+  // --- GESTION DES ERREURS DE SÉCURITÉ ---
+  const handleAuthError = (error) => {
+    const msg = error.message || "";
+    // Si l'erreur mentionne un problème de droits ou de token
+    if (msg.includes('Admin') || msg.includes('refus') || msg.includes('403') || msg.includes('401')) {
+      Alert.alert(
+        'Session Expirée',
+        'Votre connexion sécurisée a expiré. Veuillez vous reconnecter pour valider cette action.',
+        [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Se reconnecter', onPress: () => navigation.replace('Login') }
+        ]
+      );
+    } else {
+      Alert.alert('Erreur', msg);
+    }
   };
 
   // --- ACTIONS CRUD ---
 
   const handleSave = async () => {
-    // Validation de base
+    // 1. Validation de base
     if (!formUsername.trim()) {
       Alert.alert('Erreur', "Le nom d'utilisateur est requis");
       return;
     }
-    // En création, mot de passe obligatoire. En édition, il est optionnel (pour ne pas l'écraser).
     if (!editingUser && !formPassword.trim()) {
-      Alert.alert('Erreur', "Le mot de passe est requis pour un nouveau compte");
+      Alert.alert('Erreur', "Le mot de passe est requis pour créer un compte");
       return;
     }
 
@@ -76,8 +94,7 @@ export default function AdminUsers({ route, navigation }) {
       const roleToSend = isAdminRole ? 'admin' : 'user';
       
       if (editingUser) {
-        // MODE MODIFICATION (UPDATE)
-        // On ne change le mot de passe que si l'admin a écrit quelque chose
+        // --- UPDATE ---
         const updatePayload = { role: roleToSend };
         if (formPassword.trim() !== '') {
             updatePayload.password = formPassword;
@@ -86,12 +103,12 @@ export default function AdminUsers({ route, navigation }) {
         await api.updateUser(
           editingUser._id || editingUser.id, 
           updatePayload, 
-          currentAdmin
+          currentAdmin 
         );
         Alert.alert('Succès', 'Le compte a été mis à jour.');
 
       } else {
-        // MODE CRÉATION (CREATE)
+        // --- CREATE ---
         await api.createUser(
           { 
             username: formUsername, 
@@ -100,14 +117,14 @@ export default function AdminUsers({ route, navigation }) {
           }, 
           currentAdmin
         );
-        Alert.alert('Succès', `Nouveau compte ${roleToSend} créé.`);
+        Alert.alert('Succès', `Compte ${roleToSend} créé.`);
       }
       
       setModalVisible(false);
-      loadUsers(); // Rafraîchir la liste
+      loadUsers(); 
 
     } catch (e) {
-      Alert.alert('Erreur', e.message || "Une erreur est survenue");
+      handleAuthError(e);
     } finally {
       setSaving(false);
     }
@@ -119,14 +136,14 @@ export default function AdminUsers({ route, navigation }) {
       return;
     }
 
-    Alert.alert("Confirmation", "Cette suppression est définitive et immédiate.", [
+    Alert.alert("Confirmation", "Cette suppression est définitive.", [
       { text: "Annuler", style: "cancel" },
       { text: "Supprimer", style: "destructive", onPress: async () => {
           try {
             await api.deleteUser(id);
             loadUsers();
           } catch(e) {
-            Alert.alert('Erreur', "Impossible de supprimer l'utilisateur.");
+            handleAuthError(e);
           }
         }}
     ]);
@@ -151,12 +168,10 @@ export default function AdminUsers({ route, navigation }) {
         </View>
         
         <View style={styles.cardActions}>
-          {/* Bouton Modifier (Crayon) */}
           <TouchableOpacity onPress={() => openEdit(item)} style={[styles.actionBtn, {backgroundColor: 'rgba(243, 199, 100, 0.1)'}]}>
             <Feather name="edit-2" size={18} color="#F3C764" />
           </TouchableOpacity>
           
-          {/* Bouton Supprimer (Corbeille) - Sauf pour le super admin 'admin' */}
           {item.username !== 'admin' && (
             <TouchableOpacity onPress={() => handleDelete(item._id || item.id, item.username)} style={[styles.actionBtn, {backgroundColor: 'rgba(231, 76, 60, 0.1)'}]}>
               <Feather name="trash-2" size={18} color="#E74C3C" />
@@ -171,7 +186,6 @@ export default function AdminUsers({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#050B14" />
       
-      {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
           <Feather name="arrow-right" size={24} color="#F3C764" />
@@ -185,7 +199,6 @@ export default function AdminUsers({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* LISTE UTILISATEURS */}
       <FlatList 
         data={users} 
         renderItem={renderItem} 
@@ -196,7 +209,6 @@ export default function AdminUsers({ route, navigation }) {
         ListEmptyComponent={!loading && <Text style={styles.emptyText}>Aucun utilisateur trouvé.</Text>}
       />
 
-      {/* MODAL UNIFIÉ (CRÉATION / ÉDITION) */}
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -214,7 +226,7 @@ export default function AdminUsers({ route, navigation }) {
               style={[styles.input, editingUser && {opacity: 0.5, backgroundColor: '#1A2634'}]} 
               value={formUsername} 
               onChangeText={setFormUsername} 
-              editable={!editingUser} // On empêche de changer le username en édition
+              editable={!editingUser} 
               textAlign="right"
               placeholder="Ex: agence_oran"
               placeholderTextColor="#556"
@@ -222,19 +234,21 @@ export default function AdminUsers({ route, navigation }) {
             />
             
             <Text style={styles.label}>
-              {editingUser ? 'Nouveau mot de passe (Optionnel)' : 'Mot de passe'}
+              {editingUser ? 'Réinitialiser le mot de passe (Optionnel)' : 'Mot de passe (Requis)'}
             </Text>
             <TextInput 
               style={styles.input} 
               value={formPassword} 
               onChangeText={setFormPassword} 
-              placeholder={editingUser ? "Laisser vide pour conserver l'actuel" : "Requis"}
+              placeholder={editingUser ? "Laisser vide pour ne pas changer" : "Mot de passe"}
               placeholderTextColor="#556"
               secureTextEntry 
               textAlign="right"
             />
+            {editingUser && (
+                <Text style={styles.hintText}>⚠️ Ne remplissez que si vous voulez changer le mot de passe actuel.</Text>
+            )}
 
-            {/* SWITCH RÔLE */}
             <TouchableOpacity 
               style={[styles.roleSwitch, isAdminRole && styles.roleSwitchActive]} 
               onPress={() => setIsAdminRole(!isAdminRole)}
@@ -273,46 +287,35 @@ export default function AdminUsers({ route, navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#050B14', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
-  
   header: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 20, paddingBottom: 15, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.05)', backgroundColor: '#050B14' },
   headerTitle: { color: '#FFF', fontSize: 20, fontWeight:'bold', textAlign: 'right' },
   headerSub: { color: '#8A95A5', fontSize: 12, textAlign: 'right' },
   backButton: { padding: 8 },
   addButton: { backgroundColor: '#F3C764', padding: 10, borderRadius: 10 },
-  
   emptyText: { color: '#666', textAlign: 'center', marginTop: 50 },
-
-  // CARTE UTILISATEUR
   card: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#101A2D', padding: 15, borderRadius: 16, marginBottom: 12, borderWidth: 1, borderColor: 'rgba(255,255,255,0.03)' },
   cardAdmin: { borderLeftWidth: 4, borderLeftColor: '#E67E22' },
   cardUser: { borderLeftWidth: 4, borderLeftColor: '#3498DB' },
-  
   cardLeft: { flexDirection: 'row', alignItems: 'center' },
   avatar: { width: 44, height: 44, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
   avatarAdmin: { backgroundColor: 'rgba(230, 126, 34, 0.15)' },
   avatarUser: { backgroundColor: 'rgba(52, 152, 219, 0.15)' },
-  
   username: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
   roleLabel: { fontSize: 11, marginTop: 2, fontWeight: '500' },
-  
   cardActions: { flexDirection: 'row', gap: 10 },
   actionBtn: { padding: 10, borderRadius: 10 },
-
-  // MODAL
   modalContainer: { flex: 1, backgroundColor: '#050B14' },
   modalHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: 'rgba(255,255,255,0.1)', marginTop: Platform.OS === 'ios' ? 20 : 0 },
   modalTitle: { color: '#FFF', fontSize: 18, fontWeight:'bold' },
   closeBtn: { padding: 5 },
   modalBody: { padding: 20 },
-
   label: { color: '#8A95A5', marginBottom: 8, textAlign: 'right', fontSize: 13, fontWeight: '600' },
   input: { backgroundColor: '#101A2D', color: '#FFF', padding: 15, borderRadius: 12, marginBottom: 20, borderWidth:1, borderColor:'#333', fontSize: 16 },
-  
-  roleSwitch: { flexDirection: 'row-reverse', justifyContent:'space-between', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 30, borderWidth: 1, borderColor: '#333', backgroundColor: '#101A2D' },
+  hintText: { color: '#F39C12', fontSize: 11, marginBottom: 20, textAlign: 'right', fontStyle: 'italic' },
+  roleSwitch: { flexDirection: 'row', justifyContent:'space-between', alignItems: 'center', padding: 15, borderRadius: 12, marginBottom: 30, borderWidth: 1, borderColor: '#333', backgroundColor: '#101A2D' },
   roleSwitchActive: { backgroundColor: '#F3C764', borderColor: '#F3C764' },
   roleSwitchTitle: { color: '#FFF', fontWeight: 'bold', fontSize: 15, textAlign: 'right' },
   roleSwitchDesc: { color: '#8A95A5', fontSize: 11, marginTop: 2, textAlign: 'right' },
-
   saveBtn: { backgroundColor: '#F3C764', padding: 16, alignItems: 'center', borderRadius: 12 },
   saveText: { color: '#050B14', fontWeight: 'bold', fontSize: 16 }
 });

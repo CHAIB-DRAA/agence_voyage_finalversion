@@ -10,7 +10,7 @@ const getBaseUrl = () => {
   return 'http://10.0.2.2:3000';
 };
 
-const API_BASE_URL = "https://agence-voyage1.onrender.com";
+const API_BASE_URL = "https://agence-voyage1.onrender.com"; // Assure-toi que c'est bien l'URL que tu veux utiliser
 console.log('🚀 [API] Cible :', API_BASE_URL);
 
 // --- VARIABLE POUR STOCKER LE TOKEN DE SESSION ---
@@ -89,13 +89,13 @@ export default {
     }
   },
 
-  createUser: async (userData) => {
+  createUser: async (userData, adminUsername) => {
     try {
       // Plus besoin d'envoyer adminUsername, le token suffit
       const response = await fetch(`${API_BASE_URL}/auth/create`, {
         method: 'POST',
         headers: getHeaders(), // ✅ Token inclus
-        body: JSON.stringify(userData), 
+        body: JSON.stringify({ ...userData, adminUsername }), 
       });
 
       if (!response.ok) {
@@ -106,22 +106,13 @@ export default {
     } catch (error) { throw error; }
   },
 
-  deleteUser: async (id) => {
-    try {
-      await fetch(`${API_BASE_URL}/auth/users/${id}`, { 
-        method: 'DELETE',
-        headers: getHeaders() // ✅ Token inclus
-      });
-      return true;
-    } catch (error) { return false; }
-  },
-
-  updateUser: async (id, data) => {
+  // --- CORRECTION ICI ---
+  updateUser: async (id, data, adminUsername) => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/users/${id}`, {
         method: 'PUT',
-        headers: getHeaders(), // ✅ Token inclus
-        body: JSON.stringify(data), 
+        headers: getHeaders(), // <--- C'EST ICI QUE C'ÉTAIT MANQUANT !
+        body: JSON.stringify({ ...data, adminUsername }), 
       });
 
       if (!response.ok) {
@@ -132,6 +123,16 @@ export default {
     } catch (error) {
       throw error;
     }
+  },
+
+  deleteUser: async (id) => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/users/${id}`, { 
+        method: 'DELETE',
+        headers: getHeaders() // ✅ Token inclus
+      });
+      return true;
+    } catch (error) { return false; }
   },
 
   // ============================================================

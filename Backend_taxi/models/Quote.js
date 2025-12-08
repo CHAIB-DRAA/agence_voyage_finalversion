@@ -5,18 +5,6 @@ const QuoteSchema = new mongoose.Schema({
   clientName: String,
   clientPhone: String,
   createdBy: String, 
-  
-  // --- STATUT DU DEVIS (NOUVEAU) ---
-  // pending = En attente (Jaune)
-  // confirmed = Confirmé (Vert)
-  // cancelled = Annulé (Rouge)
-  status: { 
-    type: String, 
-    enum: ['pending', 'confirmed', 'cancelled'], 
-    default: 'pending' 
-  },
-
-  // --- DOCUMENTS ---
   passportImage: String,
 
   // --- VOYAGE ---
@@ -26,15 +14,17 @@ const QuoteSchema = new mongoose.Schema({
   // --- HÉBERGEMENT ---
   nightsMakkah: String,
   nightsMedina: String,
+  nightsJeddah: String,
   hotelMakkah: String, 
   hotelMedina: String, 
+  hotelJeddah: String,
   dates: {
-    makkahCheckIn: String,
-    makkahCheckOut: String,
-    medinaCheckIn: String,
-    medinaCheckOut: String
+    makkahCheckIn: String, makkahCheckOut: String,
+    medinaCheckIn: String, medinaCheckOut: String,
+    jeddahCheckIn: String, jeddahCheckOut: String
   },
   
+  // --- OPTIONS ---
   meals: [String],
   
   // --- TRANSPORT ---
@@ -47,32 +37,35 @@ const QuoteSchema = new mongoose.Schema({
   transportPrice: { type: String, default: '0' }, 
   visaPrice: { type: String, default: '0' },
   
-  // --- QUANTITÉS ---
+  // --- QUANTITÉS (Mise à jour) ---
   quantities: {
     single: { type: String, default: '0' },
     double: { type: String, default: '0' },
     triple: { type: String, default: '0' },
-    quad: { type: String, default: '0' }
+    quad: { type: String, default: '0' },
+    penta: { type: String, default: '0' }, // <--- NOUVEAU (5 lits)
+    suite: { type: String, default: '0' }  // <--- NOUVEAU (Suite)
   },
   
-  // --- PRIX ---
+  // --- PRIX (Mise à jour) ---
   prices: {
     single: { type: String, default: '0' },
     double: { type: String, default: '0' },
     triple: { type: String, default: '0' },
-    quad: { type: String, default: '0' }
+    quad: { type: String, default: '0' },
+    penta: { type: String, default: '0' }, // <--- NOUVEAU
+    suite: { type: String, default: '0' }  // <--- NOUVEAU
   },
 
+  // --- TOTAUX ---
   hotelTotal: { type: String, default: '0' }, 
   totalAmount: { type: String, default: '0' }, 
-
   advanceAmount: { type: String, default: '0' },
-remainingAmount: { type: String, default: '0' },
+  remainingAmount: { type: String, default: '0' },
   
+  status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'pending' },
   notes: String,
   createdAt: { type: Date, default: Date.now }
-
-
 });
 
 module.exports = mongoose.model('Quote', QuoteSchema);

@@ -37,31 +37,36 @@ const QuoteSchema = new mongoose.Schema({
   transportPrice: { type: String, default: '0' }, 
   visaPrice: { type: String, default: '0' },
   
-  // --- QUANTITÉS (Mise à jour) ---
+  // --- QUANTITÉS ---
   quantities: {
     single: { type: String, default: '0' },
     double: { type: String, default: '0' },
     triple: { type: String, default: '0' },
     quad: { type: String, default: '0' },
-    penta: { type: String, default: '0' }, // <--- NOUVEAU (5 lits)
-    suite: { type: String, default: '0' }  // <--- NOUVEAU (Suite)
+    penta: { type: String, default: '0' },
+    suite: { type: String, default: '0' }
   },
   
-  // --- PRIX (Mise à jour) ---
+  // --- PRIX ---
   prices: {
     single: { type: String, default: '0' },
     double: { type: String, default: '0' },
     triple: { type: String, default: '0' },
     quad: { type: String, default: '0' },
-    penta: { type: String, default: '0' }, // <--- NOUVEAU
-    suite: { type: String, default: '0' }  // <--- NOUVEAU
+    penta: { type: String, default: '0' },
+    suite: { type: String, default: '0' }
   },
 
-  // --- TOTAUX ---
+  // --- TOTAUX & PAIEMENT ---
   hotelTotal: { type: String, default: '0' }, 
   totalAmount: { type: String, default: '0' }, 
   advanceAmount: { type: String, default: '0' },
   remainingAmount: { type: String, default: '0' },
+  
+  // --- RENTABILITÉ (NOUVEAU) ---
+  expenses: { type: String, default: '0' },   // Coût total réel
+  extraCosts: { type: String, default: '0' }, // Frais divers
+  margin: { type: String, default: '0' },     // Bénéfice
   
   status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'pending' },
   notes: String,

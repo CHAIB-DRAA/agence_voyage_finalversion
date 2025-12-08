@@ -1,8 +1,8 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { 
   View, Text, TouchableOpacity, FlatList, StyleSheet, 
   SafeAreaView, StatusBar, TextInput, ActivityIndicator, 
-  RefreshControl, Keyboard, Alert
+  RefreshControl, Keyboard, Alert, Linking
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -12,6 +12,7 @@ export default function QuotesList({ navigation, route }) {
   const [allQuotes, setAllQuotes] = useState([]);
   const [displayedQuotes, setDisplayedQuotes] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('all'); // 'all', 'pending', 'confirmed', 'cancelled'
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -24,34 +25,29 @@ export default function QuotesList({ navigation, route }) {
     }, [filterUser, userRole])
   );
 
+  // Re-filtrer quand l'onglet ou la recherche change
+  useEffect(() => {
+    applyFilters();
+  }, [searchQuery, activeTab, allQuotes]);
+
   const loadQuotes = async () => {
     setLoading(true);
     try {
       const data = await api.getQuotes();
       let safeData = Array.isArray(data) ? data : [];
       
-      // --- LOGIQUE DE FILTRAGE INTELLIGENTE ---
-      
-      // CAS 1 : Vue "Demandes Web" (depuis l'alerte du Dashboard)
+      // Filtre de sécurité (Admin/Vendeur/Web)
       if (filterUser === 'Client (Web)') {
-         // On ne montre QUE les demandes Web qui sont EN ATTENTE
-         // Dès qu'elles sont traitées (confirmées/annulées), elles disparaissent de cette vue
-         safeData = safeData.filter(q => q.createdBy === 'Client (Web)' && q.status === 'pending');
-      } 
-      // CAS 2 : Vue Vendeur (Non Admin)
-      else if (!isAdmin && filterUser) {
+         safeData = safeData.filter(q => q.createdBy && q.createdBy.toLowerCase().includes('(web)') && q.status === 'pending');
+      } else if (!isAdmin && filterUser) {
         safeData = safeData.filter(q => q.createdBy === filterUser || !q.createdBy);
       }
-      // CAS 3 : Vue Admin (Archive complète)
-      // Pas de filtre, on montre tout.
       
+      // Tri par date (plus récent en haut)
+      safeData.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
       setAllQuotes(safeData);
-      
-      if (searchQuery) {
-        filterData(searchQuery, safeData);
-      } else {
-        setDisplayedQuotes(safeData);
-      }
+      // applyFilters sera appelé par le useEffect
     } catch (error) {
       console.error("Erreur chargement:", error);
     } finally {
@@ -60,48 +56,48 @@ export default function QuotesList({ navigation, route }) {
     }
   };
 
+  const applyFilters = () => {
+    let filtered = allQuotes;
+
+    // 1. Filtre par Tab (Statut)
+    if (activeTab !== 'all') {
+      filtered = filtered.filter(item => item.status === activeTab);
+    }
+
+    // 2. Filtre par Recherche
+    if (searchQuery.trim() !== '') {
+      const lowerText = searchQuery.toLowerCase();
+      filtered = filtered.filter(item => {
+        const dest = item.destination ? item.destination.toLowerCase() : '';
+        const client = item.clientName ? item.clientName.toLowerCase() : '';
+        const phone = item.clientPhone ? item.clientPhone : '';
+        return dest.includes(lowerText) || client.includes(lowerText) || phone.includes(lowerText);
+      });
+    }
+
+    setDisplayedQuotes(filtered);
+  };
+
   const onRefresh = () => {
     setRefreshing(true);
     loadQuotes();
   };
 
   const handleDelete = (id) => {
-    Alert.alert(
-      "Supprimer le devis ?",
-      "Cette action est définitive.",
-      [
-        { text: "Annuler", style: "cancel" },
-        { text: "Supprimer", style: "destructive", onPress: async () => {
-            try { await api.deleteQuote(id); loadQuotes(); } 
-            catch (e) { Alert.alert("Erreur", "Impossible de supprimer."); }
-          } 
-        }
-      ]
-    );
+    Alert.alert("Supprimer ?", "Irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Supprimer", style: "destructive", onPress: async () => { try { await api.deleteQuote(id); loadQuotes(); } catch (e) {} } }
+    ]);
   };
 
-  const handleEdit = (item) => {
-    navigation.navigate('AddEdit', { edit: true, quote: item, username: filterUser, userRole: userRole });
-  };
+  const handleEdit = (item) => navigation.navigate('AddEdit', { edit: true, quote: item, username: filterUser, userRole: userRole });
+  const handleDetails = (item) => navigation.navigate('Details', { quote: item, userRole: userRole, username: filterUser });
 
-  const handleDetails = (item) => {
-    navigation.navigate('Details', { quote: item, userRole: userRole, username: filterUser });
-  };
-
-  const filterData = (text, sourceData = allQuotes) => {
-    setSearchQuery(text);
-    if (text.trim() === '') {
-      setDisplayedQuotes(sourceData);
-    } else {
-      const lowerText = text.toLowerCase();
-      const filtered = sourceData.filter(item => {
-        const dest = item.destination ? item.destination.toLowerCase() : '';
-        const client = item.clientName ? item.clientName.toLowerCase() : '';
-        const creator = item.createdBy ? item.createdBy.toLowerCase() : '';
-        return dest.includes(lowerText) || client.includes(lowerText) || creator.includes(lowerText);
-      });
-      setDisplayedQuotes(filtered);
-    }
+  const quickWhatsApp = (phone) => {
+    if (!phone) return;
+    let cleanPhone = phone.replace(/\D/g, ''); 
+    if (cleanPhone.startsWith('0')) cleanPhone = '213' + cleanPhone.substring(1);
+    Linking.openURL(`whatsapp://send?phone=${cleanPhone}`);
   };
 
   const getStatusConfig = (status) => {
@@ -114,70 +110,84 @@ export default function QuotesList({ navigation, route }) {
 
   const renderItem = ({ item }) => {
     const status = getStatusConfig(item.status);
-    const isWeb = item.createdBy === 'Client (Web)';
+    const isWeb = item.createdBy && item.createdBy.toLowerCase().includes('(web)');
+    const creatorDisplay = isWeb ? item.createdBy.replace(/ \(Web\)/i, '').replace(/ \(web\)/i, '') : item.createdBy;
     
+    // Calcul Paiement
+    const total = parseInt(item.totalAmount) || 0;
+    const remaining = parseInt(item.remainingAmount) || 0;
+    const isPaid = total > 0 && remaining <= 0;
+
     return (
       <View style={[styles.cardContainer, { borderColor: status.color }]}>
         
-        <TouchableOpacity 
-          style={styles.cardMainArea} 
-          onPress={() => handleDetails(item)}
-          activeOpacity={0.7}
-        >
+        <TouchableOpacity style={styles.cardMainArea} onPress={() => handleDetails(item)} activeOpacity={0.7}>
+          {/* Header Carte */}
           <View style={styles.cardHeader}>
             <View style={[styles.statusBadge, { backgroundColor: status.bg }]}>
-              <Text style={[styles.statusText, { color: status.color }]}>{status.label}</Text>
-              <Feather name={status.icon} size={12} color={status.color} style={{ marginLeft: 5 }} />
+              <Feather name={status.icon} size={10} color={status.color} />
+              <Text style={[styles.statusText, { color: status.color, marginLeft: 4 }]}>{status.label}</Text>
             </View>
-            <Text style={styles.date}>{new Date(item.createdAt).toLocaleDateString('fr-FR')}</Text>
-          </View>
-
-          <View style={styles.mainInfo}>
-            <Text style={styles.clientName} numberOfLines={1}>
-              {item.clientName || 'Client Inconnu'}
-            </Text>
-            <Text style={styles.destination}>{item.destination || '---'}</Text>
-          </View>
-
-          <View style={styles.metaRow}>
-            
-            {isWeb ? (
-               <View style={[styles.creatorTag, {backgroundColor: '#3498DB'}]}>
-                  <Text style={[styles.creatorText, {color: '#FFF'}]}>🌐 طلب أونلاين</Text>
-               </View>
-            ) : (
-               isAdmin && item.createdBy ? <Text style={styles.creatorText}>Par: {item.createdBy}</Text> : <View />
+            {/* Indicateur Paiement */}
+            {total > 0 && (
+                <View style={[styles.paymentBadge, { backgroundColor: isPaid ? '#2ECC71' : '#E74C3C' }]}>
+                    <Text style={styles.paymentText}>{isPaid ? 'Payé' : 'Non soldé'}</Text>
+                </View>
             )}
-
-            <Text style={styles.nightsText}>
-              {item.nightsMakkah || 0} ليالي مكة • {item.nightsMedina || 0} ليالي المدينة
-            </Text>
           </View>
 
-          <View style={styles.priceRow}>
-            <Text style={styles.totalLabel}>الإجمالي</Text>
-            <Text style={styles.totalPrice}>{item.totalAmount ? parseInt(item.totalAmount).toLocaleString() : '0'} DA</Text>
+          {/* Info Client */}
+          <View style={styles.mainInfo}>
+            <Text style={styles.clientName} numberOfLines={1}>{item.clientName || 'Client Inconnu'}</Text>
+            <Text style={styles.destination}>{item.destination || '---'} • {new Date(item.createdAt).toLocaleDateString('fr-FR')}</Text>
           </View>
 
+          {/* Meta & Prix */}
+          <View style={styles.metaRow}>
+             <View>
+                {isWeb ? (
+                   <View style={[styles.creatorTag, {backgroundColor: '#3498DB'}]}>
+                      <Text style={[styles.creatorText, {color: '#FFF'}]}>🌐 {creatorDisplay}</Text>
+                   </View>
+                ) : (
+                   isAdmin && item.createdBy ? <Text style={styles.creatorText}>👤 {item.createdBy}</Text> : null
+                )}
+             </View>
+             <Text style={styles.totalPrice}>{total.toLocaleString()} DA</Text>
+          </View>
         </TouchableOpacity>
 
+        {/* Actions */}
         <View style={styles.actionBar}>
           <TouchableOpacity onPress={() => handleDelete(item.id || item._id)} style={styles.actionBtn}>
             <Feather name="trash-2" size={18} color="#E74C3C" />
-            <Text style={[styles.actionText, {color: '#E74C3C'}]}>حذف</Text>
           </TouchableOpacity>
-          
           <View style={styles.divider} />
           
           <TouchableOpacity onPress={() => handleEdit(item)} style={styles.actionBtn}>
             <Feather name="edit-3" size={18} color="#F3C764" />
-            <Text style={[styles.actionText, {color: '#F3C764'}]}>تعديل</Text>
+          </TouchableOpacity>
+          <View style={styles.divider} />
+          
+          {/* Nouveau : Bouton WhatsApp Rapide */}
+          <TouchableOpacity onPress={() => quickWhatsApp(item.clientPhone)} style={styles.actionBtn}>
+            <Feather name="message-circle" size={18} color="#25D366" />
           </TouchableOpacity>
         </View>
 
       </View>
     );
   };
+
+  // --- COMPOSANT ONGLETS ---
+  const FilterTab = ({ label, id, color }) => (
+    <TouchableOpacity 
+      style={[styles.filterTab, activeTab === id && { backgroundColor: color, borderColor: color }]} 
+      onPress={() => setActiveTab(id)}
+    >
+      <Text style={[styles.filterTabText, activeTab === id ? { color: '#050B14' } : { color: '#888' }]}>{label}</Text>
+    </TouchableOpacity>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
@@ -189,7 +199,7 @@ export default function QuotesList({ navigation, route }) {
             <Feather name="arrow-right" size={24} color="#F3C764" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {filterUser === 'Client (Web)' ? 'طلبات الموقع (En attente)' : (filterUser ? 'عروضي' : 'أرشيف العروض')}
+            {filterUser === 'Client (Web)' ? 'Demandes Web' : (filterUser ? 'Mes Devis' : 'Tous les Dossiers')}
           </Text>
         </View>
 
@@ -197,12 +207,20 @@ export default function QuotesList({ navigation, route }) {
           <Feather name="search" size={20} color="#8A95A5" style={{ marginLeft: 10 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="بحث..."
+            placeholder="Rechercher (Nom, Tél...)"
             placeholderTextColor="#556"
             value={searchQuery}
-            onChangeText={(text) => filterData(text)}
+            onChangeText={setSearchQuery}
             textAlign="right" 
           />
+        </View>
+
+        {/* NOUVEAU : BARRE D'ONGLETS */}
+        <View style={styles.tabsContainer}>
+            <FilterTab label="الكل (Tous)" id="all" color="#FFF" />
+            <FilterTab label="في الانتظار" id="pending" color="#F39C12" />
+            <FilterTab label="مؤكد" id="confirmed" color="#2ECC71" />
+            <FilterTab label="ملغى" id="cancelled" color="#E74C3C" />
         </View>
       </View>
 
@@ -214,9 +232,8 @@ export default function QuotesList({ navigation, route }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F3C764" />}
         ListEmptyComponent={!loading && (
           <View style={styles.emptyContainer}>
-            <Feather name="check-circle" size={50} color="rgba(46, 204, 113, 0.3)" />
-            <Text style={styles.emptyTitle}>لا توجد طلبات جديدة</Text>
-            <Text style={styles.emptySub}>Toutes les demandes web ont été traitées !</Text>
+            <Feather name="inbox" size={50} color="rgba(255,255,255,0.1)" />
+            <Text style={styles.emptyTitle}>Aucun dossier trouvé</Text>
           </View>
         )}
       />
@@ -235,36 +252,49 @@ export default function QuotesList({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#050B14' },
-  headerContainer: { backgroundColor: '#050B14', paddingBottom: 15, paddingTop: 10, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
+  headerContainer: { backgroundColor: '#050B14', paddingBottom: 10, paddingTop: 10, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
   topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 15 },
-  headerTitle: { flex: 1, color: '#F3C764', fontSize: 22, fontWeight: '800', textAlign: 'center', marginRight: -30 },
+  headerTitle: { flex: 1, color: '#F3C764', fontSize: 20, fontWeight: '800', textAlign: 'center', marginRight: -30 },
   backBtn: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
-  searchBarContainer: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#101A2D', borderRadius: 12, paddingHorizontal: 12, height: 46, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
+  searchBarContainer: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#101A2D', borderRadius: 12, paddingHorizontal: 12, height: 46, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)', marginBottom: 15 },
   searchInput: { flex: 1, color: '#FFF', fontSize: 16, marginRight: 10, height: '100%' },
+  
+  // Tabs
+  tabsContainer: { flexDirection: 'row-reverse', gap: 8 },
+  filterTab: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
+  filterTabText: { fontSize: 12, fontWeight: '600' },
+
   listContent: { padding: 20, paddingBottom: 100 },
+  
+  // Card
   cardContainer: { backgroundColor: '#101A2D', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderLeftWidth: 4, overflow: 'hidden', shadowColor: "#000", shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
-  cardMainArea: { padding: 16 },
-  cardHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  date: { color: '#556', fontSize: 12, fontWeight: '500' },
-  statusBadge: { flexDirection: 'row-reverse', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
-  statusText: { fontSize: 12, fontWeight: 'bold' },
-  mainInfo: { marginBottom: 10 },
-  clientName: { color: '#FFF', fontSize: 20, fontWeight: 'bold', textAlign: 'right', marginBottom: 4 },
-  destination: { color: '#8A95A5', fontSize: 14, textAlign: 'right' },
-  metaRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  cardMainArea: { padding: 16, paddingBottom: 10 },
+  cardHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  
+  statusBadge: { flexDirection: 'row-reverse', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  statusText: { fontSize: 10, fontWeight: 'bold' },
+  
+  paymentBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  paymentText: { color: '#FFF', fontSize: 10, fontWeight: 'bold' },
+
+  mainInfo: { marginBottom: 8 },
+  clientName: { color: '#FFF', fontSize: 18, fontWeight: 'bold', textAlign: 'right', marginBottom: 2 },
+  destination: { color: '#8A95A5', fontSize: 13, textAlign: 'right' },
+
+  metaRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },
   creatorText: { color: '#556', fontSize: 11, fontStyle: 'italic' },
-  creatorTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  nightsText: { color: '#8A95A5', fontSize: 12 },
-  priceRow: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', marginTop: 5 },
-  totalLabel: { color: '#8A95A5', fontSize: 12, marginLeft: 8 },
-  totalPrice: { color: '#F3C764', fontSize: 22, fontWeight: 'bold' },
+  creatorTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
+  
+  priceRow: { marginTop: 10, borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', paddingTop: 8, flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center' },
+  totalLabel: { color: '#8A95A5', fontSize: 12 },
+  totalPrice: { color: '#F3C764', fontSize: 18, fontWeight: '900' },
+
   actionBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', backgroundColor: 'rgba(0,0,0,0.2)' },
-  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14 },
-  actionText: { marginLeft: 8, fontWeight: '600', fontSize: 14 },
+  actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 12 },
   divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.05)' },
+
   emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80 },
   emptyTitle: { color: '#666', fontSize: 18, fontWeight: '700', marginTop: 10 },
-  emptySub: { color: '#444', marginTop: 5 },
   loaderCenter: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(5,11,20,0.5)' },
   fab: { position: 'absolute', bottom: 30, left: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: '#F3C764', alignItems: 'center', justifyContent: 'center', shadowColor: '#F3C764', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
 });

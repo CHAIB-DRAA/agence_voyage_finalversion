@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage'; // Requis pour la mémoire
 
 // --- DÉTECTION AUTOMATIQUE DE L'IP ---
 const getBaseUrl = () => {
@@ -10,17 +11,20 @@ const getBaseUrl = () => {
   return 'http://10.0.2.2:3000';
 };
 
-const API_BASE_URL = "https://agence-voyage-finalversion.onrender.com"; // Assure-toi que c'est bien l'URL que tu veux utiliser
-console.log('🚀 [API] Cible :', API_BASE_URL);
+const API_BASE_URL = "https://agence-voyage1.onrender.com"; 
+console.log('🚀 [API] Cible détectée :', API_BASE_URL);
 
-// --- VARIABLE POUR STOCKER LE TOKEN DE SESSION ---
-let SESSION_TOKEN = null;
+// --- GESTION INTELLIGENTE DU TOKEN ---
+// Récupère le token stocké (mémoire ou disque)
+const getAuthHeaders = async () => {
+  let token = null;
+  try {
+    token = await AsyncStorage.getItem('user_token');
+  } catch (e) { console.error('Erreur lecture token', e); }
 
-// Helper pour générer les headers avec le token
-const getHeaders = () => {
   const headers = { 'Content-Type': 'application/json' };
-  if (SESSION_TOKEN) {
-    headers['Authorization'] = `Bearer ${SESSION_TOKEN}`;
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
   }
   return headers;
 };
@@ -32,7 +36,6 @@ export default {
   // ============================================================
   
   login: async (username, password) => {
-    console.log('🔐 [API] login...');
     try {
       const response = await fetch(`${API_BASE_URL}/auth/login`, {
         method: 'POST',
@@ -44,10 +47,10 @@ export default {
       
       const data = await response.json();
       
-      // 🛑 SAUVEGARDE DU TOKEN EN MÉMOIRE
+      // 🛑 SAUVEGARDE PERSISTANTE DU TOKEN
       if (data.token) {
-        SESSION_TOKEN = data.token;
-        console.log('🔑 Token sécurisé enregistré');
+        await AsyncStorage.setItem('user_token', data.token);
+        console.log('🔑 Token sauvegardé sur le disque');
       }
       
       return data; 
@@ -57,47 +60,36 @@ export default {
     }
   },
 
+  // ... (Seed reste inchangé) ...
   seed: async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/seed`);
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Erreur seed');
       return json.message;
-    } catch (error) {
-      console.error("❌ [API] seed ERROR :", error.message);
-      throw error;
-    }
+    } catch (error) { throw error; }
   },
 
   // ============================================================
-  // 2. GESTION UTILISATEURS (Nécessite Token Admin)
+  // 2. GESTION UTILISATEURS
   // ============================================================
 
   getUsers: async () => {
     try {
-      // ✅ AJOUT DU HEADER D'AUTORISATION
-      const response = await fetch(`${API_BASE_URL}/auth/users`, {
-        method: 'GET',
-        headers: getHeaders() 
-      });
-      
-      if (!response.ok) throw new Error('Accès refusé (Admin requis)');
+      const headers = await getAuthHeaders(); // <--- AWAIT IMPORTANT
+      const response = await fetch(`${API_BASE_URL}/auth/users`, { headers });
       return await response.json();
-    } catch (error) { 
-      console.error("❌ [API] getUsers:", error.message);
-      return []; 
-    }
+    } catch (error) { return []; }
   },
 
   createUser: async (userData, adminUsername) => {
     try {
-      // Plus besoin d'envoyer adminUsername, le token suffit
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/auth/create`, {
         method: 'POST',
-        headers: getHeaders(), // ✅ Token inclus
+        headers: headers,
         body: JSON.stringify({ ...userData, adminUsername }), 
       });
-
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.error || 'Erreur création');
@@ -106,30 +98,28 @@ export default {
     } catch (error) { throw error; }
   },
 
-  // --- CORRECTION ICI ---
   updateUser: async (id, data, adminUsername) => {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/auth/users/${id}`, {
         method: 'PUT',
-        headers: getHeaders(), // <--- C'EST ICI QUE C'ÉTAIT MANQUANT !
+        headers: headers,
         body: JSON.stringify({ ...data, adminUsername }), 
       });
-
       if (!response.ok) {
         const err = await response.json();
         throw new Error(err.error || 'Erreur mise à jour');
       }
       return await response.json();
-    } catch (error) {
-      throw error;
-    }
+    } catch (error) { throw error; }
   },
 
   deleteUser: async (id) => {
     try {
+      const headers = await getAuthHeaders();
       await fetch(`${API_BASE_URL}/auth/users/${id}`, { 
         method: 'DELETE',
-        headers: getHeaders() // ✅ Token inclus
+        headers: headers 
       });
       return true;
     } catch (error) { return false; }
@@ -141,9 +131,8 @@ export default {
 
   getQuotes: async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/quotes`, {
-        headers: getHeaders() // Optionnel selon ta config serveur, mais conseillé
-      });
+      const headers = await getAuthHeaders(); // Nécessaire pour la tâche de fond
+      const response = await fetch(`${API_BASE_URL}/quotes`, { headers });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -154,6 +143,7 @@ export default {
 
   saveQuote: async (quoteData) => {
     try {
+      const headers = await getAuthHeaders();
       const isEdit = !!quoteData.id;
       const url = isEdit ? `${API_BASE_URL}/quotes/${quoteData.id}` : `${API_BASE_URL}/quotes`;
       const method = isEdit ? 'PUT' : 'POST';
@@ -161,7 +151,7 @@ export default {
 
       const response = await fetch(url, {
         method: method,
-        headers: getHeaders(), // ✅ Token inclus (si tu protèges l'écriture)
+        headers: headers,
         body: JSON.stringify(bodyData),
       });
 
@@ -169,7 +159,6 @@ export default {
         const text = await response.text(); 
         throw new Error(`Erreur HTTP: ${response.status}`);
       }
-
       return await response.json();
     } catch (error) {
       console.error("❌ [API] saveQuote ERROR :", error.message);
@@ -177,19 +166,16 @@ export default {
     }
   },
 
-  // Nouveau : Suppression de devis
   deleteQuote: async (id) => {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/quotes/${id}`, {
         method: 'DELETE',
-        headers: getHeaders()
+        headers: headers
       });
       if (!response.ok) throw new Error('Erreur suppression');
       return true;
-    } catch (error) {
-      console.error("❌ [API] deleteQuote ERROR :", error.message);
-      throw error;
-    }
+    } catch (error) { throw error; }
   },
 
   // ============================================================
@@ -201,14 +187,12 @@ export default {
       const response = await fetch(`${API_BASE_URL}/hotels`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return await response.json();
-    } catch (error) {
-      console.error("❌ [API] getHotels ERROR :", error.message);
-      return [];
-    }
+    } catch (error) { return []; }
   },
 
   saveHotel: async (hotelData) => {
     try {
+      const headers = await getAuthHeaders();
       const isEdit = !!hotelData.id;
       const url = isEdit ? `${API_BASE_URL}/hotels/${hotelData.id}` : `${API_BASE_URL}/hotels`;
       const method = isEdit ? 'PUT' : 'POST';
@@ -216,7 +200,7 @@ export default {
 
       const response = await fetch(url, {
         method: method,
-        headers: getHeaders(), // ✅ Token Admin requis
+        headers: headers,
         body: JSON.stringify(bodyData),
       });
 
@@ -224,30 +208,24 @@ export default {
         const errorText = await response.text(); 
         throw new Error(errorText);
       }
-      
       return await response.json();
-    } catch (error) {
-      console.error("❌ [API] saveHotel ERROR :", error.message);
-      throw error;
-    }
+    } catch (error) { throw error; }
   },
 
   deleteHotel: async (id) => {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/hotels/${id}`, { 
         method: 'DELETE',
-        headers: getHeaders() // ✅ Token Admin requis
+        headers: headers 
       });
       if (!response.ok) throw new Error('Erreur suppression');
       return true;
-    } catch (error) {
-      console.error("❌ [API] deleteHotel ERROR :", error.message);
-      throw error;
-    }
+    } catch (error) { throw error; }
   },
 
   // ============================================================
-  // 5. GESTION DES PARAMÈTRES (SETTINGS)
+  // 5. GESTION DES PARAMÈTRES
   // ============================================================
 
   getSettings: async () => {
@@ -264,16 +242,16 @@ export default {
         meals: json.meals || []
       };
     } catch (error) {
-      console.error("❌ [API] getSettings:", error.message);
       return { destinations: [], periods: [], transports: [], intercity: [], meals: [] };
     }
   },
 
   addSetting: async (category, label, price = '0') => {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/settings`, {
         method: 'POST',
-        headers: getHeaders(), // ✅ Token Admin requis
+        headers: headers,
         body: JSON.stringify({ category, label, price }),
       });
       return await response.json();
@@ -282,9 +260,10 @@ export default {
 
   updateSetting: async (id, data) => {
     try {
+      const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/settings/${id}`, {
         method: 'PUT',
-        headers: getHeaders(), // ✅ Token Admin requis
+        headers: headers,
         body: JSON.stringify(data),
       });
       return await response.json();
@@ -293,9 +272,10 @@ export default {
 
   deleteSetting: async (id) => {
     try {
+      const headers = await getAuthHeaders();
       await fetch(`${API_BASE_URL}/settings/${id}`, { 
         method: 'DELETE',
-        headers: getHeaders() // ✅ Token Admin requis
+        headers: headers 
       });
       return true;
     } catch (error) { throw error; }

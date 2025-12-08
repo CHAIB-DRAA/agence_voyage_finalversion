@@ -1,116 +1,147 @@
 import React, { useState, useEffect } from 'react';
 import { 
   View, Text, TextInput, TouchableOpacity, FlatList, StyleSheet, 
-  SafeAreaView, StatusBar, Modal, ActivityIndicator, Alert, ScrollView 
+  SafeAreaView, StatusBar, Modal, ActivityIndicator, Alert, ScrollView, Platform, KeyboardAvoidingView
 } from 'react-native';
-import { Feather } from '@expo/vector-icons';
+import { Feather, FontAwesome5, MaterialIcons } from '@expo/vector-icons';
 import api from '../utils/api';
 
+// --- CONSTANTES DESIGN ---
+const COLORS = {
+  bg: '#050B14',
+  card: '#101A2D',
+  primary: '#F3C764',
+  text: '#FFFFFF',
+  textDim: '#8A95A5',
+  border: '#2A3B55',
+  danger: '#E74C3C',
+  success: '#2ECC71'
+};
+
 export default function AdminSettings({ navigation }) {
-  // État initial avec toutes les catégories possibles
-  const [settings, setSettings] = useState({ destinations: [], periods: [], transports: [], intercity: [], meals: [] });
+  // Données
+  const [settings, setSettings] = useState({ destinations: [], periods: [], transports: [], intercity: [], meals: [], agency_info: [] });
   const [activeTab, setActiveTab] = useState('destination');
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   
-  // États pour le formulaire (Ajout/Edition)
+  // Modal
   const [modalVisible, setModalVisible] = useState(false);
-  const [currentItem, setCurrentItem] = useState({ id: null, label: '', price: '' });
+  const [currentItem, setCurrentItem] = useState({ id: null, label: '', price: '', category: '' });
   const [saving, setSaving] = useState(false);
 
-  // Chargement des données au démarrage
+  // Configuration des Onglets
+  const TABS = [
+    { key: 'destination', label: 'الوجهات', sub: 'Destinations', icon: 'map-pin', hasPrice: false },
+    { key: 'period', label: 'الفترات', sub: 'Saisons', icon: 'calendar', hasPrice: false },
+    { key: 'transport_main', label: 'الطيران', sub: 'Vols', icon: 'plane', hasPrice: false }, 
+    { key: 'transport_intercity', label: 'نقل داخلي', sub: 'Transport', icon: 'bus', hasPrice: true }, 
+    { key: 'meal', label: 'الإعاشة', sub: 'Repas', icon: 'coffee', hasPrice: true },
+    { key: 'agency_info', label: 'الوكالة', sub: 'Config', icon: 'settings', hasPrice: false, isConfig: true }, // NOUVEAU
+  ];
+
+  const currentTabConfig = TABS.find(t => t.key === activeTab);
+
   useEffect(() => { loadData(); }, []);
 
   const loadData = async () => {
     setLoading(true);
-    const data = await api.getSettings();
-    setSettings(data);
+    try {
+      const data = await api.getSettings();
+      // On s'assure que toutes les clés existent
+      setSettings({
+        destinations: data.destinations || [],
+        periods: data.periods || [],
+        transports: data.transports || [],
+        intercity: data.intercity || [],
+        meals: data.meals || [],
+        agency_info: data.agency_info || [] // Stockage générique pour la config
+      });
+    } catch (e) { console.error(e); }
     setLoading(false);
   };
 
+  // --- LOGIQUE FILTRAGE ---
+  const getFilteredData = () => {
+    let data = [];
+    if (activeTab === 'destination') data = settings.destinations;
+    else if (activeTab === 'period') data = settings.periods;
+    else if (activeTab === 'transport_main') data = settings.transports;
+    else if (activeTab === 'transport_intercity') data = settings.intercity;
+    else if (activeTab === 'meal') data = settings.meals;
+    else if (activeTab === 'agency_info') data = settings.agency_info;
+
+    if (!searchQuery) return data;
+    return data.filter(item => item.label.toLowerCase().includes(searchQuery.toLowerCase()));
+  };
+
+  // --- ACTIONS ---
   const handleSave = async () => {
     if (!currentItem.label.trim()) {
-      Alert.alert('Erreur', 'Le nom est obligatoire');
+      Alert.alert('Erreur', 'Le champ est vide');
       return;
     }
 
     setSaving(true);
     try {
       if (currentItem.id) {
-        // Mode Modification
         await api.updateSetting(currentItem.id, { 
           label: currentItem.label, 
           price: currentItem.price || '0' 
         });
       } else {
-        // Mode Création
         await api.addSetting(activeTab, currentItem.label, currentItem.price || '0');
       }
       setModalVisible(false);
-      loadData(); // Recharger la liste pour voir les changements
+      loadData();
     } catch (e) {
-      Alert.alert('Erreur', 'Impossible de sauvegarder');
+      Alert.alert('Erreur', 'Echec sauvegarde');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = (id) => {
-    Alert.alert("Supprimer ?", "Cette action est irréversible.", [
+    Alert.alert("Supprimer ?", "Cette action est définitive.", [
       { text: "Annuler", style: "cancel" },
-      { text: "Supprimer", style: "destructive", onPress: async () => {
-          await api.deleteSetting(id);
-          loadData();
-        } 
-      }
+      { text: "Supprimer", style: "destructive", onPress: async () => { await api.deleteSetting(id); loadData(); } }
     ]);
   };
 
   const openEdit = (item) => {
-    setCurrentItem({ id: item._id, label: item.label, price: String(item.price || '0') });
+    setCurrentItem({ id: item._id, label: item.label, price: String(item.price || '0'), category: activeTab });
     setModalVisible(true);
   };
 
   const openNew = () => {
-    setCurrentItem({ id: null, label: '', price: '' });
+    setCurrentItem({ id: null, label: '', price: '', category: activeTab });
     setModalVisible(true);
   };
 
-  // Configuration des onglets (Tabs)
-  const tabs = [
-    { key: 'destination', label: 'الوجهات (Dest)', hasPrice: false },
-    { key: 'period', label: 'الفترات (Saison)', hasPrice: false },
-    { key: 'transport_main', label: 'الطيران (Vols)', hasPrice: false }, 
-    { key: 'transport_intercity', label: 'نقل داخلي', hasPrice: true }, // Transport a un prix fixe
-    { key: 'meal', label: 'الإعاشة (Repas)', hasPrice: true }, // Repas a un prix fixe
-  ];
-
-  const currentTabConfig = tabs.find(t => t.key === activeTab);
-  
-  // Récupérer les données correspondant à l'onglet actif
-  const getDataForTab = () => {
-    if (activeTab === 'destination') return settings.destinations;
-    if (activeTab === 'period') return settings.periods;
-    if (activeTab === 'transport_main') return settings.transports;
-    if (activeTab === 'transport_intercity') return settings.intercity;
-    if (activeTab === 'meal') return settings.meals;
-    return [];
-  };
-
+  // --- RENDERERS ---
   const renderItem = ({ item }) => (
-    <View style={styles.itemRow}>
-      <View style={{flex: 1}}>
-        <Text style={styles.itemText}>{item.label}</Text>
-        {/* On affiche le prix seulement si pertinent ou s'il est > 0 */}
-        {(currentTabConfig.hasPrice || (item.price && item.price !== '0')) && (
-          <Text style={styles.itemPrice}>{item.price} DA</Text>
+    <View style={styles.card}>
+      <View style={[styles.iconBox, {backgroundColor: COLORS.primary + '20'}]}>
+         <Feather name={currentTabConfig.icon} size={20} color={COLORS.primary} />
+      </View>
+      
+      <View style={{flex: 1, marginHorizontal: 10}}>
+        <Text style={styles.itemTitle}>{item.label}</Text>
+        {currentTabConfig.hasPrice && item.price && item.price !== '0' && (
+           <Text style={styles.itemPrice}>{parseInt(item.price).toLocaleString()} DA</Text>
+        )}
+        {/* Affichage spécial pour la config agence */}
+        {activeTab === 'agency_info' && (
+           <Text style={styles.itemSub}>Paramètre Système</Text>
         )}
       </View>
+
       <View style={styles.actions}>
-        <TouchableOpacity onPress={() => openEdit(item)} style={styles.iconBtn}>
-          <Feather name="edit-2" size={20} color="#F3C764" />
+        <TouchableOpacity onPress={() => openEdit(item)} style={styles.actionBtn}>
+          <Feather name="edit-2" size={18} color={COLORS.textDim} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => handleDelete(item._id)} style={styles.iconBtn}>
-          <Feather name="trash-2" size={20} color="#E74C3C" />
+        <TouchableOpacity onPress={() => handleDelete(item._id)} style={[styles.actionBtn, {backgroundColor: COLORS.danger + '20'}]}>
+          <Feather name="trash-2" size={18} color={COLORS.danger} />
         </TouchableOpacity>
       </View>
     </View>
@@ -118,123 +149,173 @@ export default function AdminSettings({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#050B14" />
+      <StatusBar barStyle="light-content" backgroundColor={COLORS.bg} />
       
       {/* HEADER */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backButton}>
-          <Feather name="arrow-right" size={24} color="#F3C764" />
+          <Feather name="arrow-right" size={24} color={COLORS.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>إعدادات عامة</Text>
+        <Text style={styles.headerTitle}>Paramètres & Options</Text>
         <TouchableOpacity onPress={openNew} style={styles.addButton}>
-          <Feather name="plus" size={24} color="#050B14" />
+          <Feather name="plus" size={24} color={COLORS.bg} />
         </TouchableOpacity>
       </View>
 
-      {/* BARRE D'ONGLETS */}
-      <View style={styles.tabsContainer}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{paddingHorizontal: 10}}>
-          {tabs.map(tab => (
-            <TouchableOpacity 
-              key={tab.key} 
-              onPress={() => setActiveTab(tab.key)} 
-              style={[styles.tab, activeTab === tab.key && styles.activeTab]}
-            >
-              <Text style={[styles.tabText, activeTab === tab.key && styles.activeTabText]}>
-                {tab.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
+      {/* TABS (SCROLLABLE) */}
+      <View style={{height: 70}}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabsScroll}>
+          {TABS.map(tab => {
+            const isActive = activeTab === tab.key;
+            return (
+              <TouchableOpacity 
+                key={tab.key} 
+                onPress={() => { setActiveTab(tab.key); setSearchQuery(''); }} 
+                style={[styles.tabItem, isActive && styles.tabItemActive]}
+              >
+                <Feather name={tab.icon} size={16} color={isActive ? COLORS.bg : COLORS.textDim} style={{marginBottom: 4}} />
+                <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>{tab.label}</Text>
+                <Text style={[styles.tabSub, isActive && {color: 'rgba(0,0,0,0.5)'}]}>{tab.sub}</Text>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </View>
 
-      {/* LISTE DES OPTIONS */}
+      {/* SEARCH BAR */}
+      <View style={styles.searchContainer}>
+        <Feather name="search" size={18} color={COLORS.textDim} style={{marginRight: 10}} />
+        <TextInput 
+          style={styles.searchInput} 
+          placeholder={`Rechercher dans ${currentTabConfig.label}...`} 
+          placeholderTextColor={COLORS.textDim}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Feather name="x" size={18} color={COLORS.textDim} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* LISTE */}
       <FlatList
-        data={getDataForTab()}
-        keyExtractor={item => item._id}
+        data={getFilteredData()}
+        keyExtractor={item => item._id || Math.random().toString()}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 20 }}
+        contentContainerStyle={styles.listContent}
         refreshing={loading}
         onRefresh={loadData}
-        ListEmptyComponent={<Text style={{color:'#666', textAlign:'center', marginTop:50}}>Aucune option trouvée.</Text>}
+        ListEmptyComponent={
+          !loading && (
+            <View style={styles.emptyState}>
+              <Feather name="sliders" size={40} color={COLORS.border} />
+              <Text style={styles.emptyText}>Aucune option configurée</Text>
+              <Text style={styles.emptySub}>Appuyez sur + pour ajouter</Text>
+            </View>
+          )
+        }
       />
 
-      {/* MODAL AJOUT / MODIFICATION */}
-      <Modal visible={modalVisible} animationType="fade" transparent={true} onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalOverlay}>
+      {/* MODAL */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true} onRequestClose={() => setModalVisible(false)}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>
-              {currentItem.id ? 'Modifier l\'option' : 'Nouvelle option'}
-            </Text>
-            
-            <Text style={styles.label}>Nom / Libellé</Text>
-            <TextInput 
-              style={styles.input} 
-              value={currentItem.label} 
-              onChangeText={t => setCurrentItem({...currentItem, label: t})}
-              placeholder="Ex: Bus VIP" 
-              placeholderTextColor="#556"
-              textAlign="right"
-            />
-
-            {/* Champ Prix (Affiché seulement si pertinent pour la catégorie) */}
-            {currentTabConfig && currentTabConfig.hasPrice && (
-              <>
-                <Text style={styles.label}>Prix par défaut (DA)</Text>
-                <TextInput 
-                  style={styles.input} 
-                  value={currentItem.price} 
-                  onChangeText={t => setCurrentItem({...currentItem, price: t})}
-                  keyboardType="numeric"
-                  placeholder="0" 
-                  placeholderTextColor="#556"
-                  textAlign="right"
-                />
-              </>
-            )}
-
-            <View style={styles.modalButtons}>
-              <TouchableOpacity onPress={() => setModalVisible(false)} style={styles.cancelBtn}>
-                <Text style={styles.cancelText}>Annuler</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={handleSave} style={styles.saveBtn} disabled={saving}>
-                {saving ? <ActivityIndicator color="#050B14" /> : <Text style={styles.saveText}>Enregistrer</Text>}
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{currentItem.id ? 'Modifier' : 'Ajouter'} {currentTabConfig.sub}</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)}>
+                <Feather name="x" size={24} color={COLORS.text} />
               </TouchableOpacity>
             </View>
+
+            <View style={styles.formGroup}>
+              <Text style={styles.label}>Libellé / Nom</Text>
+              <TextInput 
+                style={styles.input} 
+                value={currentItem.label} 
+                onChangeText={t => setCurrentItem({...currentItem, label: t})}
+                placeholder={activeTab === 'agency_info' ? "Ex: Nom Agence" : "Ex: Bus VIP"} 
+                placeholderTextColor={COLORS.textDim}
+                autoFocus
+              />
+              {activeTab === 'agency_info' && <Text style={styles.hint}>Utilisé pour configurer les variables globales (CCP, Tél...)</Text>}
+            </View>
+
+            {(currentTabConfig.hasPrice || (currentItem.price && currentItem.price !== '0')) && (
+              <View style={styles.formGroup}>
+                <Text style={styles.label}>Prix par défaut (Optionnel)</Text>
+                <View style={styles.priceInputContainer}>
+                   <TextInput 
+                    style={[styles.input, {flex:1, marginBottom:0}]} 
+                    value={currentItem.price} 
+                    onChangeText={t => setCurrentItem({...currentItem, price: t})}
+                    keyboardType="numeric"
+                    placeholder="0" 
+                    placeholderTextColor={COLORS.textDim}
+                  />
+                  <Text style={styles.currencySuffix}>DA</Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
+              {saving ? <ActivityIndicator color={COLORS.bg} /> : <Text style={styles.saveText}>Enregistrer</Text>}
+            </TouchableOpacity>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#050B14', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
-  header: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#050B14', borderBottomWidth: 1, borderColor: '#1F2937' },
-  headerTitle: { color: '#F3C764', fontSize: 20, fontWeight: 'bold' },
-  addButton: { backgroundColor: '#F3C764', padding: 8, borderRadius: 8 },
-  backButton: { padding: 8 },
+  container: { flex: 1, backgroundColor: COLORS.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
+  
+  header: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderColor: COLORS.border },
+  headerTitle: { color: COLORS.text, fontSize: 20, fontWeight: 'bold' },
+  addButton: { backgroundColor: COLORS.primary, padding: 10, borderRadius: 12 },
+  backButton: { padding: 5 },
 
-  tabsContainer: { height: 60, marginTop: 10 },
-  tab: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 10, borderRadius: 20, borderWidth: 1, borderColor: '#333', height: 40, justifyContent: 'center' },
-  activeTab: { backgroundColor: '#F3C764', borderColor: '#F3C764' },
-  tabText: { color: '#AAA', fontSize: 13 },
-  activeTabText: { color: '#050B14', fontWeight: 'bold' },
+  tabsScroll: { paddingHorizontal: 15, alignItems: 'center' },
+  tabItem: { paddingVertical: 10, paddingHorizontal: 16, marginRight: 10, borderRadius: 16, borderWidth: 1, borderColor: COLORS.border, backgroundColor: COLORS.card, alignItems: 'center', minWidth: 80 },
+  tabItemActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
+  tabLabel: { color: COLORS.textDim, fontSize: 12, fontWeight: 'bold' },
+  tabLabelActive: { color: COLORS.bg },
+  tabSub: { fontSize: 10, color: COLORS.textDim, marginTop: 2 },
 
-  itemRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', padding: 15, backgroundColor: '#101A2D', borderRadius: 12, marginBottom: 10, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
-  itemText: { color: '#FFF', fontSize: 16, fontWeight: '600', textAlign: 'right' },
-  itemPrice: { color: '#F3C764', fontSize: 14, textAlign: 'right', marginTop: 4 },
-  actions: { flexDirection: 'row', gap: 15 },
-  iconBtn: { padding: 5 },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.card, marginHorizontal: 20, marginTop: 10, borderRadius: 12, paddingHorizontal: 15, paddingVertical: 12, borderWidth: 1, borderColor: COLORS.border },
+  searchInput: { flex: 1, color: COLORS.text, fontSize: 16 },
 
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', padding: 20 },
-  modalContent: { backgroundColor: '#101A2D', borderRadius: 16, padding: 20, borderWidth: 1, borderColor: '#333' },
-  modalTitle: { color: '#F3C764', fontSize: 20, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
-  label: { color: '#8A95A5', marginBottom: 8, textAlign: 'right' },
-  input: { backgroundColor: '#050B14', color: '#FFF', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#333' },
-  modalButtons: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 },
-  cancelBtn: { padding: 15, flex: 1, alignItems: 'center' },
-  cancelText: { color: '#888' },
-  saveBtn: { backgroundColor: '#F3C764', padding: 15, borderRadius: 10, flex: 1, alignItems: 'center', marginLeft: 10 },
-  saveText: { color: '#050B14', fontWeight: 'bold' },
+  listContent: { padding: 20, paddingBottom: 100 },
+  
+  card: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: COLORS.card, padding: 15, borderRadius: 16, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border },
+  iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  itemTitle: { color: COLORS.text, fontSize: 16, fontWeight: '600', textAlign: 'right' },
+  itemPrice: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold', textAlign: 'right', marginTop: 4 },
+  itemSub: { color: COLORS.textDim, fontSize: 10, textAlign: 'right', marginTop: 2, fontStyle: 'italic' },
+  
+  actions: { flexDirection: 'row', gap: 10 },
+  actionBtn: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
+
+  emptyState: { alignItems: 'center', marginTop: 50 },
+  emptyText: { color: COLORS.text, fontSize: 16, fontWeight: 'bold', marginTop: 10 },
+  emptySub: { color: COLORS.textDim, fontSize: 14, marginTop: 5 },
+
+  // MODAL
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'flex-end' },
+  modalContent: { backgroundColor: COLORS.bg, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 25, borderWidth: 1, borderColor: COLORS.border },
+  modalHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
+  modalTitle: { color: COLORS.text, fontSize: 20, fontWeight: 'bold' },
+  
+  formGroup: { marginBottom: 20 },
+  label: { color: COLORS.textDim, marginBottom: 8, textAlign: 'right', fontSize: 14 },
+  input: { backgroundColor: COLORS.card, color: COLORS.text, padding: 15, borderRadius: 12, borderWidth: 1, borderColor: COLORS.border, fontSize: 16, textAlign: 'right' },
+  hint: { color: COLORS.primary, fontSize: 11, marginTop: 5, textAlign: 'right' },
+  
+  priceInputContainer: { flexDirection: 'row', alignItems: 'center' },
+  currencySuffix: { color: COLORS.primary, marginLeft: 10, fontWeight: 'bold' },
+
+  saveBtn: { backgroundColor: COLORS.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
+  saveText: { color: COLORS.bg, fontWeight: 'bold', fontSize: 16 },
 });

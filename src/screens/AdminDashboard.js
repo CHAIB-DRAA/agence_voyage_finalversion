@@ -6,67 +6,47 @@ import {
 import { Feather, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
-import * as BackgroundFetch from 'expo-background-fetch'; // <--- NOUVEAU
-import * as TaskManager from 'expo-task-manager';       // <--- NOUVEAU
+import * as BackgroundFetch from 'expo-background-fetch';
+import * as TaskManager from 'expo-task-manager';
 import api from '../utils/api';
 
 const { width } = Dimensions.get('window');
-const FORM_URL = "http://10.211.205.58:3000/index.html"; 
+
+// URL DE BASE (A changer pour la prod)
+const BASE_FORM_URL = "https://agence-voyage1.onrender.com/index.html"; 
 const BACKGROUND_FETCH_TASK = 'background-fetch-quotes';
 
-// --- CONFIGURATION DES NOTIFICATIONS ---
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
+  handleNotification: async () => ({ shouldShowAlert: true, shouldPlaySound: true, shouldSetBadge: true }),
 });
 
-// --- 1. DÉFINITION DE LA TÂCHE DE FOND (HORS COMPOSANT) ---
-// Cette fonction peut s'exécuter même si l'app est en arrière-plan (toutes les ~15 min)
+// --- TÂCHE DE FOND (APP FERMÉE) ---
 TaskManager.defineTask(BACKGROUND_FETCH_TASK, async () => {
   try {
-    console.log('🔄 [BACKGROUND] Vérification des nouveaux devis...');
-    
-    // On récupère les devis (Note: api.js doit avoir le token en mémoire ou AsyncStorage pour que ça marche parfaitement)
-    // Dans une architecture idéale, on stockerait le token dans SecureStore pour le relire ici.
     const allQuotes = await api.getQuotes(); 
-    
     if (allQuotes && Array.isArray(allQuotes)) {
-      const webRequests = allQuotes.filter(q => q.createdBy === 'Client (Web)' && q.status === 'pending');
-      const count = webRequests.length;
+      // Détection large : Tout ce qui contient "(Web)" ou "(web)" et qui est en attente
+      const webRequests = allQuotes.filter(q => 
+        q.createdBy && 
+        q.createdBy.toLowerCase().includes('(web)') && 
+        q.status === 'pending'
+      );
       
-      // Ici, on pourrait comparer avec une valeur stockée dans AsyncStorage pour savoir si c'est "nouveau"
-      // Pour l'exemple, on notifie s'il y a des demandes en attente
+      const count = webRequests.length;
       if (count > 0) {
         await Notifications.scheduleNotificationAsync({
-          content: {
-            title: "🔔 Mise à jour Agence",
-            body: `Il y a ${count} demande(s) Web en attente de traitement.`,
-            sound: 'default',
-            badge: count,
-          },
+          content: { title: "🔔 Agence : Nouvelles demandes", body: `${count} demande(s) en ligne en attente de traitement.`, sound: 'default', badge: count },
           trigger: null,
         });
         return BackgroundFetch.BackgroundFetchResult.NewData;
       }
     }
     return BackgroundFetch.BackgroundFetchResult.NoData;
-  } catch (error) {
-    console.error('❌ [BACKGROUND] Erreur:', error);
-    return BackgroundFetch.BackgroundFetchResult.Failed;
-  }
+  } catch (error) { return BackgroundFetch.BackgroundFetchResult.Failed; }
 });
 
 export default function AdminDashboard({ navigation, route }) {
-  const [stats, setStats] = useState({
-    quotesCount: 0,
-    totalRevenue: 0,
-    hotelsCount: 0,
-    recentQuotes: [],
-    webRequestsCount: 0
-  });
+  const [stats, setStats] = useState({ quotesCount: 0, totalRevenue: 0, hotelsCount: 0, recentQuotes: [], webRequestsCount: 0 });
   const [refreshing, setRefreshing] = useState(false);
   const prevWebCountRef = useRef(0);
   const appState = useRef(AppState.currentState);
@@ -75,190 +55,124 @@ export default function AdminDashboard({ navigation, route }) {
   const userRole = route.params?.userRole || 'user'; 
   const isAdmin = userRole === 'admin'; 
 
-  // --- 2. ENREGISTREMENT DE LA TÂCHE DE FOND ---
+  // --- LIEN PERSONNALISÉ ---
+  const personalizedLink = `${BASE_FORM_URL}?source=${currentUsername}`;
+
   useEffect(() => {
     registerForPushNotificationsAsync();
     registerBackgroundFetchAsync();
   }, []);
 
-  // --- 3. BOUCLE DE VÉRIFICATION ACTIVE (FOREGROUND) ---
-  // Celle-ci est rapide (30s) tant que l'app est ouverte
   useFocusEffect(
     useCallback(() => {
       loadData(true);
-      const interval = setInterval(() => {
-        if (AppState.currentState === 'active') {
-           loadData(false);
-        }
-      }, 30000);
+      const interval = setInterval(() => { if (AppState.currentState === 'active') loadData(false); }, 30000);
       return () => clearInterval(interval);
     }, [])
   );
 
   async function registerBackgroundFetchAsync() {
-    try {
-        // Enregistre la tâche pour tourner périodiquement (minimum 15min imposé par OS)
-        await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, {
-            minimumInterval: 60 * 15, // 15 minutes
-            stopOnTerminate: false,   // Continue même si l'utilisateur ferme l'app (sur Android)
-            startOnBoot: true,        // Redémarre avec le téléphone (Android)
-        });
-        console.log('✅ [SYSTEM] Tâche de fond enregistrée');
-    } catch (err) {
-        console.log("⚠️ [SYSTEM] Background fetch non supporté ou échoué:", err);
-    }
+    try { await BackgroundFetch.registerTaskAsync(BACKGROUND_FETCH_TASK, { minimumInterval: 60 * 15, stopOnTerminate: false, startOnBoot: true }); } catch (err) {}
   }
-
   async function registerForPushNotificationsAsync() {
-    if (Platform.OS === 'android') {
-      await Notifications.setNotificationChannelAsync('default', {
-        name: 'default',
-        importance: Notifications.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        lightColor: '#FF231F7C',
-      });
-    }
+    if (Platform.OS === 'android') { await Notifications.setNotificationChannelAsync('default', { name: 'default', importance: Notifications.AndroidImportance.MAX, vibrationPattern: [0, 250, 250, 250], lightColor: '#FF231F7C' }); }
     const { status } = await Notifications.requestPermissionsAsync();
-    if (status !== 'granted') {
-      // Alert.alert('Attention', 'Sans permission, vous ne recevrez pas les alertes devis !');
-    }
   }
 
   const loadData = async (showLoading = false) => {
     if (showLoading) setRefreshing(true);
     try {
-        const [allQuotes, hotels] = await Promise.all([
-           api.getQuotes(),
-           api.getHotels()
-        ]);
+        const [allQuotes, hotels] = await Promise.all([api.getQuotes(), api.getHotels()]);
 
+        // Filtrage pour stats perso : Admin voit tout, Vendeur voit ses devis + ses devis web
         const myQuotes = isAdmin 
-        ? allQuotes 
-        : allQuotes.filter(q => q.createdBy === currentUsername);
+            ? allQuotes 
+            : allQuotes.filter(q => q.createdBy === currentUsername || q.createdBy === `${currentUsername} (Web)`);
 
-        const webRequests = allQuotes.filter(q => q.createdBy === 'Client (Web)' && q.status === 'pending');
+        // Détection Web pour l'alerte
+        let webRequests = [];
+        if (isAdmin) {
+            // ADMIN : Voit TOUTES les demandes qui contiennent "(Web)" (ex: "Ahmed (Web)", "Client (Web)")
+            webRequests = allQuotes.filter(q => 
+                q.createdBy && 
+                q.createdBy.toLowerCase().includes('(web)') && 
+                q.status === 'pending'
+            );
+        } else {
+            // VENDEUR : Ne voit que SES demandes Web
+            webRequests = allQuotes.filter(q => 
+                q.createdBy === `${currentUsername} (Web)` && 
+                q.status === 'pending'
+            );
+        }
+
         const currentWebCount = webRequests.length;
 
-        // Détection Live (App ouverte)
         if (currentWebCount > prevWebCountRef.current && prevWebCountRef.current !== 0) {
             await Notifications.scheduleNotificationAsync({
-              content: {
-                title: "🔔 Nouveau Client Web !",
-                body: `Une nouvelle demande vient d'arriver. Total en attente : ${currentWebCount}`,
-                sound: 'default',
-              },
+              content: { title: "🔔 Nouveau Client Web !", body: `Une nouvelle demande vient d'arriver (${currentWebCount} en attente).`, sound: 'default' },
               trigger: null,
             });
         }
-        
         prevWebCountRef.current = currentWebCount;
 
-        const totalRev = myQuotes.reduce((acc, q) => {
-           if (q.status === 'confirmed') return acc + (parseInt(q.totalAmount) || 0);
-           return acc;
-        }, 0);
+        const totalRev = myQuotes.reduce((acc, q) => { if (q.status === 'confirmed') return acc + (parseInt(q.totalAmount) || 0); return acc; }, 0);
         
-        setStats({
-           quotesCount: myQuotes.length,
-           totalRevenue: totalRev,
-           hotelsCount: hotels.length,
-           recentQuotes: myQuotes.slice(0, 5),
-           webRequestsCount: currentWebCount
-        });
+        setStats({ quotesCount: myQuotes.length, totalRevenue: totalRev, hotelsCount: hotels.length, recentQuotes: myQuotes.slice(0, 5), webRequestsCount: currentWebCount });
     } catch (e) { console.error(e); }
     if (showLoading) setRefreshing(false);
   };
 
-  const onRefresh = () => {
-    loadData(true);
-  };
+  const onRefresh = () => { loadData(true); };
 
-  // ... (Reste des fonctions shareLink, StatCard, MenuButton inchangées) ...
   const shareLink = async (platform) => {
-    const message = `السلام عليكم 👋\nيمكنكم الآن طلب عرض سعر للعمرة مباشرة عبر هذا الرابط:\n${FORM_URL}`;
-    const urlEncoded = encodeURIComponent(FORM_URL);
+    const message = `السلام عليكم 👋\nيمكنكم الآن طلب عرض سعر للعمرة مباشرة عبر هذا الرابط:\n${personalizedLink}`;
+    const urlEncoded = encodeURIComponent(personalizedLink);
     const textEncoded = encodeURIComponent(message);
     let link = "";
     switch (platform) {
         case 'whatsapp': link = `whatsapp://send?text=${textEncoded}`; break;
         case 'facebook': link = `https://www.facebook.com/sharer/sharer.php?u=${urlEncoded}`; break;
         case 'messenger': link = `fb-messenger://share/?link=${urlEncoded}`; break;
-        case 'general': default:
-            try { await Share.share({ message: message, url: FORM_URL, title: 'Demande de devis Omra' }); return; } catch (error) { alert(error.message); return; }
+        case 'general': default: try { await Share.share({ message: message, url: personalizedLink, title: 'Demande de devis Omra' }); return; } catch (error) { alert(error.message); return; }
     }
     if (link) { Linking.canOpenURL(link).then(supported => { if (supported) return Linking.openURL(link); else Share.share({ message: message }); }); }
   };
 
-  const StatCard = ({ title, value, icon, color, isCurrency }) => (
-    <View style={[styles.statCard, { shadowColor: color }]}>
-      <View style={[styles.iconCircle, { backgroundColor: `${color}20` }]}>
-        <Feather name={icon} size={22} color={color} />
-      </View>
-      <View>
-        <Text style={styles.statValue}>{isCurrency ? value.toLocaleString() : value}{isCurrency && <Text style={styles.currency}> DA</Text>}</Text>
-        <Text style={styles.statLabel}>{title}</Text>
-      </View>
-    </View>
-  );
-
-  const MenuButton = ({ title, subtitle, icon, target, params, color }) => (
-    <TouchableOpacity style={[styles.menuBtn, { shadowColor: color }]} onPress={() => navigation.navigate(target, params)} activeOpacity={0.9}>
-      <View style={[styles.menuIconBox, { backgroundColor: color }]}><Feather name={icon} size={24} color="#FFF" /></View>
-      <View style={styles.menuContent}><Text style={styles.menuTitle}>{title}</Text><Text style={styles.menuSub}>{subtitle}</Text></View>
-      <Feather name="chevron-left" size={20} color="#556" />
-    </TouchableOpacity>
-  );
+  const StatCard = ({ title, value, icon, color, isCurrency }) => ( <View style={[styles.statCard, { shadowColor: color }]}><View style={[styles.iconCircle, { backgroundColor: `${color}20` }]}><Feather name={icon} size={22} color={color} /></View><View><Text style={styles.statValue}>{isCurrency ? value.toLocaleString() : value}{isCurrency && <Text style={styles.currency}> DA</Text>}</Text><Text style={styles.statLabel}>{title}</Text></View></View> );
+  const MenuButton = ({ title, subtitle, icon, target, params, color }) => ( <TouchableOpacity style={[styles.menuBtn, { shadowColor: color }]} onPress={() => navigation.navigate(target, params)} activeOpacity={0.9}><View style={[styles.menuIconBox, { backgroundColor: color }]}><Feather name={icon} size={24} color="#FFF" /></View><View style={styles.menuContent}><Text style={styles.menuTitle}>{title}</Text><Text style={styles.menuSub}>{subtitle}</Text></View><Feather name="chevron-left" size={20} color="#556" /></TouchableOpacity> );
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#050B14" />
       <View style={styles.header}>
-        <View style={styles.headerTop}>
-            <TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.logoutBtn}>
-                <Feather name="log-out" size={18} color="#E74C3C" />
-            </TouchableOpacity>
-            <View>
-                <Text style={styles.greeting}>مرحباً بك 👋</Text>
-                <Text style={styles.username}>{currentUsername}</Text>
-            </View>
-        </View>
+        <View style={styles.headerTop}><TouchableOpacity onPress={() => navigation.navigate('Login')} style={styles.logoutBtn}><Feather name="log-out" size={18} color="#E74C3C" /></TouchableOpacity><View><Text style={styles.greeting}>مرحباً بك 👋</Text><Text style={styles.username}>{currentUsername}</Text></View></View>
         <View style={styles.roleBadge}><Text style={styles.roleText}>{isAdmin ? 'Administrateur' : 'Vendeur'}</Text></View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F3C764" />}>
         
-        {stats.webRequestsCount > 0 && isAdmin && (
-          <TouchableOpacity style={styles.alertCard} onPress={() => navigation.navigate('List', { filterUser: 'Client (Web)', userRole: 'admin' })}>
-            <View style={styles.alertContent}>
-                <Text style={styles.alertTitle}>طلبات الويب الجديدة</Text>
-                <Text style={styles.alertDesc}>لديك <Text style={{fontWeight:'bold', color:'#FFF'}}>{stats.webRequestsCount}</Text> طلبات تنتظر المعالجة</Text>
-            </View>
+        {stats.webRequestsCount > 0 && (
+          <TouchableOpacity style={styles.alertCard} onPress={() => navigation.navigate('List', { filterUser: 'Client (Web)', userRole: isAdmin ? 'admin' : 'user' })}>
+            <View style={styles.alertContent}><Text style={styles.alertTitle}>طلبات الويب الجديدة</Text><Text style={styles.alertDesc}>لديك <Text style={{fontWeight:'bold', color:'#FFF'}}>{stats.webRequestsCount}</Text> طلبات تنتظر المعالجة</Text></View>
             <View style={styles.alertIconPulse}><Feather name="globe" size={24} color="#FFF" /></View>
           </TouchableOpacity>
         )}
 
         <Text style={styles.sectionTitle}>نظرة عامة</Text>
-        <View style={styles.statsRow}>
-          <StatCard title="إجمالي العروض" value={stats.quotesCount} icon="file-text" color="#3498DB" />
-          {isAdmin && <StatCard title="الفنادق" value={stats.hotelsCount} icon="home" color="#9B59B6" />}
-        </View>
-        <View style={{marginTop: 10}}>
-             <StatCard title="المبيعات المؤكدة (CA Réel)" value={stats.totalRevenue} icon="pie-chart" color="#2ECC71" isCurrency />
-        </View>
+        <View style={styles.statsRow}><StatCard title="إجمالي العروض" value={stats.quotesCount} icon="file-text" color="#3498DB" />{isAdmin && <StatCard title="الفنادق" value={stats.hotelsCount} icon="home" color="#9B59B6" />}</View>
+        <View style={{marginTop: 10}}><StatCard title="المبيعات المؤكدة" value={stats.totalRevenue} icon="pie-chart" color="#2ECC71" isCurrency /></View>
 
         <Text style={styles.sectionTitle}>مشاركة رابط الحجز (Marketing)</Text>
         <View style={styles.shareContainer}>
-            <Text style={styles.shareLabel}>أرسل الرابط للعملاء ليقوموا بالحجز بأنفسهم:</Text>
+            <Text style={styles.shareLabel}>رابطك الخاص (Lien personnel) :</Text>
             <View style={styles.shareButtonsRow}>
                 <TouchableOpacity style={[styles.shareBtn, {backgroundColor: '#25D366'}]} onPress={() => shareLink('whatsapp')}><FontAwesome5 name="whatsapp" size={24} color="#FFF" /></TouchableOpacity>
                 <TouchableOpacity style={[styles.shareBtn, {backgroundColor: '#1877F2'}]} onPress={() => shareLink('facebook')}><FontAwesome5 name="facebook-f" size={24} color="#FFF" /></TouchableOpacity>
                 <TouchableOpacity style={[styles.shareBtn, {backgroundColor: '#006AFF'}]} onPress={() => shareLink('messenger')}><FontAwesome5 name="facebook-messenger" size={24} color="#FFF" /></TouchableOpacity>
                 <TouchableOpacity style={[styles.shareBtn, {backgroundColor: '#8E44AD'}]} onPress={() => shareLink('general')}><Feather name="share-2" size={24} color="#FFF" /></TouchableOpacity>
             </View>
-            <View style={styles.linkPreview}>
-                <Text style={styles.linkText} numberOfLines={1}>{FORM_URL}</Text>
-                <TouchableOpacity onPress={() => shareLink('general')}><Feather name="copy" size={16} color="#F3C764" /></TouchableOpacity>
-            </View>
+            <View style={styles.linkPreview}><Text style={styles.linkText} numberOfLines={1}>{personalizedLink}</Text><TouchableOpacity onPress={() => shareLink('general')}><Feather name="copy" size={16} color="#F3C764" /></TouchableOpacity></View>
         </View>
 
         <Text style={styles.sectionTitle}>لوحة التحكم</Text>
@@ -268,7 +182,6 @@ export default function AdminDashboard({ navigation, route }) {
         <MenuButton title="الفنادق والأسعار" subtitle="Gestion des hôtels et saisons" icon="server" target="AdminHotels" params={{ userRole: userRole }} color="#F3C764" />
         {isAdmin && <MenuButton title="الإعدادات" subtitle="Destinations & Options" icon="sliders" target="AdminSettings" color="#95A5A6" />}
         <MenuButton title="الأرشيف" subtitle="Consulter l'historique" icon="archive" target="List" params={{ filterUser: isAdmin ? null : currentUsername, userRole: userRole }} color="#3498DB" />
-
       </ScrollView>
     </SafeAreaView>
   );

@@ -47,8 +47,6 @@ const emptyQuote = {
   numberOfPeople: '1', 
   quantities: { single: '0', double: '0', triple: '0', quad: '0', penta: '0', suite: '0' },
   prices: { single: '0', double: '0', triple: '0', quad: '0', penta: '0', suite: '0' },
-  
-  // --- DONNÉES FINANCIÈRES CRITIQUES ---
   totalAmount: '0',
   hotelTotal: '0',
   advanceAmount: '0', 
@@ -56,7 +54,6 @@ const emptyQuote = {
   expenses: '0',
   extraCosts: '0',
   margin: '0',
-  
   notes: ''
 };
 
@@ -73,8 +70,8 @@ export default function AddEditQuote({ navigation, route }) {
   const [genericModalVisible, setGenericModalVisible] = useState(false);
   const [targetCityForHotel, setTargetCityForHotel] = useState(null); 
   const [targetFieldForGeneric, setTargetFieldForGeneric] = useState(null);
-  
   const [isAdvanceEnabled, setIsAdvanceEnabled] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const isEditMode = !!route.params?.edit;
 
@@ -161,9 +158,9 @@ export default function AddEditQuote({ navigation, route }) {
     });
 
     const extra = safeParse(quote.extraCosts);
-    const totalExpenses = totalHotelsOnly + totalFixedCosts ;
+    const totalExpenses = totalHotelsOnly + totalFixedCosts + extra;
     const margin = safeParse(quote.margin);
-    const grandTotal = totalExpenses + margin + extra;
+    const grandTotal = totalExpenses + margin;
     const advance = safeParse(quote.advanceAmount);
     const remaining = grandTotal - advance;
 
@@ -232,8 +229,11 @@ export default function AddEditQuote({ navigation, route }) {
       return;
     }
     try {
+      // Correction compatibilité version ImagePicker
+      const mediaTypes = ImagePicker.MediaTypeOptions ? ImagePicker.MediaTypeOptions.Images : ImagePicker.MediaType.Images;
+      
       let result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaType.Images,
+        mediaTypes: mediaTypes,
         allowsEditing: true,
         aspect: [4, 3],
         quality: 0.3, 
@@ -248,68 +248,57 @@ export default function AddEditQuote({ navigation, route }) {
     }
   };
 
-  // --- LOGIQUE SAUVEGARDE RENFORCÉE ---
-  const save = async () => {
-    if (!quote.clientName || !quote.destination) {
-      Alert.alert('Manquant', 'Veuillez renseigner le Client et la Destination');
-      return;
-    }
-    try {
-      // On s'assure que TOUS les champs financiers sont bien dans le paquet envoyé
-      const finalPayload = {
-        ...quote,
-        // Forcer les valeurs financières calculées pour éviter qu'un ancien state ne les écrase
-        expenses: quote.expenses,
-        extraCosts: quote.extraCosts,
-        margin: quote.margin,
-        advanceAmount: quote.advanceAmount,
-        remainingAmount: quote.remainingAmount,
-        visaPrice: quote.visaPrice,
-        
-        createdBy: isEditMode ? (quote.createdBy || creatorUsername || 'Admin') : (creatorUsername || 'Admin')
-      };
-
-      console.log("📤 Envoi au serveur (Finances) :", {
-        total: finalPayload.totalAmount,
-        avance: finalPayload.advanceAmount,
-        reste: finalPayload.remainingAmount,
-        marge: finalPayload.margin
-      });
-
-      await api.saveQuote(finalPayload);
-      Alert.alert('Succès', 'Dossier enregistré');
-      navigation.navigate('List', { filterUser: creatorUsername, userRole });
-    } catch (e) {
-      Alert.alert('Erreur', 'Connexion serveur impossible');
-      console.error(e);
-    }
-  };
-
   const generateReceipt = async () => {
     if (!quote.clientName) {
         Alert.alert('تنبيه', 'Veuillez saisir un nom de client.');
         return;
     }
     try {
-        const html = `
-            <!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>body{font-family:'Helvetica',sans-serif;padding:30px;color:#333;direction:rtl;text-align:right;border:2px solid #F3C764;margin:10px}.header{text-align:center;margin-bottom:20px;border-bottom:1px solid #eee;padding-bottom:10px}.title{font-size:24px;font-weight:bold;color:#050B14;margin:0}.amount-box{background:#F3C764;color:#050B14;padding:20px;text-align:center;font-size:28px;font-weight:900;margin:30px 0;border-radius:8px;border:2px solid #050B14}.info-row{margin-bottom:15px;font-size:16px;border-bottom:1px dashed #eee;padding-bottom:5px}.summary-row{display:flex;justify-content:space-between;margin-bottom:10px;font-size:16px}.footer{margin-top:40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #ccc;padding-top:10px}.signatures{margin-top:50px;display:flex;justify-content:space-between;padding:0 20px}.sig-box{text-align:center;width:40%;border-top:1px solid #333;padding-top:10px}</style></head><body>
-            <div class="header"><h1 class="title">إيصال استلام</h1><p>BON DE VERSEMENT ESPÈCES</p><p style="font-size:12px">${new Date().toLocaleString()}</p></div>
-            <div class="info-row"><strong>استلمنا من:</strong> ${quote.clientName}</div>
-            <div class="amount-box">مبلغ: ${parseInt(quote.advanceAmount).toLocaleString()} DA</div>
-            <div style="display:flex;justify-content:space-between;border-top:1px dashed #ccc;padding-top:10px;margin-top:20px">
-              <span>المتبقي (Reste): <strong style="color:#c0392b">${parseInt(quote.remainingAmount).toLocaleString()} DA</strong></span>
-              <span>الإجمالي (Total): <strong>${parseInt(quote.totalAmount).toLocaleString()} DA</strong></span>
-            </div>
-            <div class="signatures"><div class="sig-box">توقيع العميل</div><div class="sig-box">ختم الوكالة</div></div>
-            <div class="footer">وثيقة رسمية لإثبات الدفع.</div>
-            </body></html>
-        `;
+        const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>body{font-family:'Helvetica',sans-serif;padding:30px;color:#333;direction:rtl;text-align:right;border:2px solid #F3C764;margin:10px}.header{text-align:center;margin-bottom:20px;border-bottom:1px solid #eee;padding-bottom:10px}.title{font-size:24px;font-weight:bold;color:#050B14;margin:0}.amount-box{background:#F3C764;color:#050B14;padding:20px;text-align:center;font-size:28px;font-weight:900;margin:30px 0;border-radius:8px;border:2px solid #050B14}.info-row{margin-bottom:15px;font-size:16px;border-bottom:1px dashed #eee;padding-bottom:5px}.summary-row{display:flex;justify-content:space-between;margin-bottom:10px;font-size:16px}.footer{margin-top:40px;text-align:center;font-size:12px;color:#888;border-top:1px solid #ccc;padding-top:10px}.signatures{margin-top:50px;display:flex;justify-content:space-between;padding:0 20px}.sig-box{text-align:center;width:40%;border-top:1px solid #333;padding-top:10px}</style></head><body><div class="header"><h1 class="title">إيصال استلام</h1><p>BON DE VERSEMENT ESPÈCES</p><p style="font-size:12px">${new Date().toLocaleString()}</p></div><div class="info-row"><strong>استلمنا من:</strong> ${quote.clientName}</div><div class="amount-box">مبلغ: ${parseInt(quote.advanceAmount).toLocaleString()} DA</div><div style="display:flex;justify-content:space-between;border-top:1px dashed #ccc;padding-top:10px;margin-top:20px"><span>المتبقي (Reste): <strong style="color:#c0392b">${parseInt(quote.remainingAmount).toLocaleString()} DA</strong></span><span>الإجمالي (Total): <strong>${parseInt(quote.totalAmount).toLocaleString()} DA</strong></span></div><div class="signatures"><div class="sig-box">توقيع العميل</div><div class="sig-box">ختم الوكالة</div></div><div class="footer">وثيقة رسمية لإثبات الدفع.</div></body></html>`;
         const { uri } = await Print.printToFileAsync({ html });
         await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
     } catch (error) { Alert.alert('Erreur', 'Impossible de générer le reçu'); }
   };
 
-  // --- LOGIQUE DATES (CHAINAGE) ---
+  const save = async () => {
+    if (!quote.clientName || !quote.destination) {
+      Alert.alert('Manquant', 'Veuillez renseigner le Client et la Destination');
+      return;
+    }
+    try {
+      const finalPayload = {
+        ...quote,
+        createdBy: isEditMode ? (quote.createdBy || creatorUsername || 'Admin') : (creatorUsername || 'Admin')
+      };
+      await api.saveQuote(finalPayload);
+      Alert.alert('Succès', 'Dossier enregistré');
+      navigation.navigate('List', { filterUser: creatorUsername, userRole });
+    } catch (e) {
+      Alert.alert('Erreur', 'Connexion serveur impossible');
+    }
+  };
+
+  // --- UI HELPERS ---
+  const toggleMeal = (label) => setQuote(prev => { const m = prev.meals || []; return m.includes(label) ? { ...prev, meals: m.filter(x => x !== label) } : { ...prev, meals: [...m, label] }; });
+  const setStatus = (s) => setQuote(prev => ({ ...prev, status: s }));
+  const updateQuantity = (key, value) => setQuote(prev => ({ ...prev, quantities: { ...prev.quantities, [key]: value } }));
+  const setTransportInterCity = (type) => setQuote(prev => ({ ...prev, transportMakkahMedina: type }));
+  const toggleAdvance = () => { const next = !isAdvanceEnabled; setIsAdvanceEnabled(next); if (!next) setQuote(p => ({ ...p, advanceAmount: '0' })); };
+  
+  const openHotelPicker = (city) => { setSearchQuery(''); setTargetCityForHotel(city); setHotelModalVisible(true); };
+  const selectHotel = (hotel) => { if (targetCityForHotel === 'Makkah') setQuote(prev => ({ ...prev, hotelMakkah: hotel.name })); else if (targetCityForHotel === 'Medina') setQuote(prev => ({ ...prev, hotelMedina: hotel.name })); else if (targetCityForHotel === 'Jeddah') setQuote(prev => ({ ...prev, hotelJeddah: hotel.name })); setHotelModalVisible(false); };
+  const openGenericPicker = (field) => { setSearchQuery(''); setTargetFieldForGeneric(field); setGenericModalVisible(true); };
+  const selectGenericOption = (value) => { setQuote(prev => ({ ...prev, [targetFieldForGeneric]: value })); setGenericModalVisible(false); };
+  
+  // FILTRAGE
+  const filteredHotels = hotels.filter(h => h.city === targetCityForHotel && h.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  const getOptionsList = () => { 
+      const list = targetFieldForGeneric === 'destination' ? tripOptions.destinations : targetFieldForGeneric === 'period' ? tripOptions.periods : tripOptions.transports; 
+      return list.filter(i => i.label.toLowerCase().includes(searchQuery.toLowerCase())); 
+  };
+  const getModalTitle = () => targetFieldForGeneric === 'destination' ? 'الوجهة' : targetFieldForGeneric === 'period' ? 'الفترة' : 'الطيران';
+
+  // Dates Helper
   const calculateNightsBetween = (d1Str, d2Str) => {
     if(!d1Str || !d2Str) return '0';
     const [d1, m1, y1] = d1Str.split('/').map(Number);
@@ -348,19 +337,6 @@ export default function AddEditQuote({ navigation, route }) {
         });
     } 
   };
-  
-  const toggleAdvance = () => { const next = !isAdvanceEnabled; setIsAdvanceEnabled(next); if (!next) setQuote(p => ({ ...p, advanceAmount: '0' })); };
-  const toggleMeal = (label) => setQuote(prev => { const m = prev.meals || []; return m.includes(label) ? { ...prev, meals: m.filter(x => x !== label) } : { ...prev, meals: [...m, label] }; });
-  const setStatus = (s) => setQuote(prev => ({ ...prev, status: s }));
-  const updateQuantity = (key, value) => setQuote(prev => ({ ...prev, quantities: { ...prev.quantities, [key]: value } }));
-  const setTransportInterCity = (type) => setQuote(prev => ({ ...prev, transportMakkahMedina: type }));
-  const openHotelPicker = (city) => { setTargetCityForHotel(city); setHotelModalVisible(true); };
-  const selectHotel = (hotel) => { if (targetCityForHotel === 'Makkah') setQuote(prev => ({ ...prev, hotelMakkah: hotel.name })); else if (targetCityForHotel === 'Medina') setQuote(prev => ({ ...prev, hotelMedina: hotel.name })); else if (targetCityForHotel === 'Jeddah') setQuote(prev => ({ ...prev, hotelJeddah: hotel.name })); setHotelModalVisible(false); };
-  const openGenericPicker = (field) => { setTargetFieldForGeneric(field); setGenericModalVisible(true); };
-  const selectGenericOption = (value) => { setQuote(prev => ({ ...prev, [targetFieldForGeneric]: value })); setGenericModalVisible(false); };
-  const getOptionsList = () => { if (targetFieldForGeneric === 'destination') return tripOptions.destinations; if (targetFieldForGeneric === 'period') return tripOptions.periods; if (targetFieldForGeneric === 'transport') return tripOptions.transports; return []; };
-  const getModalTitle = () => targetFieldForGeneric === 'destination' ? 'الوجهة' : targetFieldForGeneric === 'period' ? 'الفترة' : 'الطيران';
-  const filteredHotels = hotels.filter(h => h.city === targetCityForHotel);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -372,7 +348,6 @@ export default function AddEditQuote({ navigation, route }) {
         </View>
 
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          
           <View style={styles.statusContainer}>
             <TouchableOpacity style={[styles.statusBtn, quote.status === 'cancelled' && styles.statusCancelled]} onPress={() => setStatus('cancelled')}><Text style={[styles.statusText, quote.status === 'cancelled' && {color:'#FFF'}]}>ملغى</Text></TouchableOpacity>
             <TouchableOpacity style={[styles.statusBtn, quote.status === 'pending' && styles.statusPending]} onPress={() => setStatus('pending')}><Text style={[styles.statusText, quote.status === 'pending' && {color:'#FFF'}]}>في الانتظار</Text></TouchableOpacity>
@@ -434,78 +409,29 @@ export default function AddEditQuote({ navigation, route }) {
             <RoomInput label="Suite" qty={quote.quantities.suite} price={quote.prices.suite} onChange={v => updateQuantity('suite', v)} disabled={!checkAvailability('suite')} />
             <View style={styles.divider} />
             <Text style={styles.label}>Repas (الإعاشة)</Text>
-            <View style={styles.mealsContainer}>{tripOptions.meals.length > 0 ? tripOptions.meals.map(m => <MealChip key={m._id} label={`${m.label} (${m.price}DA)`} active={quote.meals.includes(m.label)} onPress={() => toggleMeal(m.label)} />) : <Text style={{color:'#666'}}>Options vides</Text>}</View>
+            <View style={styles.mealsContainer}>{tripOptions.meals.length > 0 ? tripOptions.meals.map(m => <MealChip key={m._id} label={`${m.label} (${m.price}DA)`} active={quote.meals.includes(m.label)} onPress={() => toggleMeal(m.label)} />) : <Text style={{color:'#666'}}>Ajouter options dans Admin</Text>}</View>
           </View>
 
           {/* --- SECTION RENTABILITÉ --- */}
           <View style={[styles.card, {borderColor: '#3498DB', borderWidth: 1}]}>
              <SectionHeader title="الربحية (Interne)" icon="trending-up" />
-             <Text style={styles.infoText}>Zone interne - Calcul du prix de vente</Text>
-             
-             <View style={styles.rowReverse}>
-                <View style={{flex: 1, marginLeft: 10}}>
-                   <InputField 
-                      label="التكلفة (Coût)" 
-                      value={quote.expenses} 
-                      onChangeText={t => setQuote({...quote, expenses: t})} 
-                      keyboardType="numeric" 
-                      placeholder="0" 
-                   />
-                </View>
-                <View style={{flex: 1}}>
-                    <InputField 
-                      label="فرايس إضافية (Extra)" 
-                      value={quote.extraCosts} 
-                      onChangeText={t => setQuote({...quote, extraCosts: t})} 
-                      keyboardType="numeric" 
-                      placeholder="0" 
-                   />
-                </View>
-             </View>
-             
-             <View style={styles.rowReverse}>
-                <View style={{flex: 1, marginLeft: 10}}>
-                   <InputField 
-                      label="الربح (Marge)" 
-                      value={quote.margin} 
-                      onChangeText={t => setQuote({...quote, margin: t})} 
-                      keyboardType="numeric" 
-                      placeholder="0" 
-                   />
-                </View>
-                <View style={{flex: 1, justifyContent:'center'}}>
-                   <Text style={{color: '#AAA', fontSize:10, textAlign:'center'}}>Vente (Total)</Text>
-                   <Text style={{color: '#F3C764', fontSize:20, fontWeight:'bold', textAlign:'center'}}>{quote.totalAmount} DA</Text>
-                </View>
-             </View>
+             <View style={styles.rowReverse}><View style={{flex: 1, marginLeft: 10}}><InputField label="التكلفة (Auto)" value={quote.expenses} onChangeText={t => setQuote({...quote, expenses: t})} keyboardType="numeric" placeholder="0" /></View><View style={{flex: 1}}><InputField label="Extra" value={quote.extraCosts} onChangeText={t => setQuote({...quote, extraCosts: t})} keyboardType="numeric" placeholder="0" /></View></View>
+             <View style={styles.rowReverse}><View style={{flex: 1, marginLeft: 10}}><InputField label="الربح (Marge)" value={quote.margin} onChangeText={t => setQuote({...quote, margin: t})} keyboardType="numeric" placeholder="0" /></View><View style={{flex: 1, justifyContent:'center'}}><Text style={{color: '#AAA', fontSize:10, textAlign:'center'}}>Vente (Total)</Text><Text style={{color: '#F3C764', fontSize:20, fontWeight:'bold', textAlign:'center'}}>{quote.totalAmount} DA</Text></View></View>
           </View>
 
           {/* --- SECTION PAIEMENT --- */}
           <View style={[styles.card, {borderColor: '#F3C764', borderWidth:1}]}>
-            <SectionHeader title="المدفوعات (Paiement)" icon="dollar-sign" />
+            <SectionHeader title="المدفوعات" icon="dollar-sign" />
             <TouchableOpacity style={[styles.checkboxContainer, {marginBottom: 15, justifyContent: 'flex-end'}]} onPress={toggleAdvance}>
                 <Text style={{color: '#FFF', marginRight: 10, fontWeight: 'bold'}}>إضافة دفعة (Avance)</Text>
                 <Feather name={isAdvanceEnabled ? "check-square" : "square"} size={24} color={isAdvanceEnabled ? "#F3C764" : "#666"} />
             </TouchableOpacity>
-
             <View style={styles.rowReverse}>
-              {isAdvanceEnabled && (
-                <View style={{ flex: 1, marginLeft: 10 }}>
-                  <InputField label="المبلغ المدفوع" value={quote.advanceAmount} onChangeText={t => setQuote({...quote, advanceAmount: t})} keyboardType="numeric" placeholder="0" />
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                 <View style={{ marginBottom: 12, width: '100%' }}>
-                    <Text style={styles.label}>المتبقي (Reste)</Text>
-                    <View style={[styles.input, {backgroundColor: '#F3C764', flexDirection: 'row', justifyContent: 'center', alignItems: 'center'}]}>
-                        <Text style={{color: '#050B14', fontWeight: 'bold', textAlign: 'center'}}>{quote.remainingAmount} DA</Text>
-                    </View>
-                 </View>
-              </View>
+              {isAdvanceEnabled && <View style={{ flex: 1, marginLeft: 10 }}><InputField label="المبلغ المدفوع" value={quote.advanceAmount} onChangeText={t => setQuote({...quote, advanceAmount: t})} keyboardType="numeric" placeholder="0" /></View>}
+              <View style={{ flex: 1 }}><View style={{ marginBottom: 12, width: '100%' }}><Text style={styles.label}>المتبقي</Text><View style={[styles.input, {backgroundColor: '#F3C764', flexDirection: 'row', justifyContent: 'center', alignItems: 'center'}]}><Text style={{color: '#050B14', fontWeight: 'bold', textAlign: 'center'}}>{quote.remainingAmount} DA</Text></View></View></View>
             </View>
             <TouchableOpacity style={styles.receiptBtn} onPress={generateReceipt}>
-               <Feather name="printer" size={16} color="#050B14" />
-               <Text style={styles.receiptBtnText}>طباعة وصل استلام (Reçu)</Text>
+               <Feather name="printer" size={16} color="#050B14" /><Text style={styles.receiptBtnText}>طباعة وصل استلام (Reçu)</Text>
             </TouchableOpacity>
           </View>
 
@@ -514,8 +440,10 @@ export default function AddEditQuote({ navigation, route }) {
 
         </ScrollView>
 
-        <Modal visible={hotelModalVisible} animationType="slide" transparent={true}><View style={styles.modalOverlay}><View style={styles.modalContent}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Sélection Hôtel ({targetCityForHotel})</Text><TouchableOpacity onPress={() => setHotelModalVisible(false)}><Feather name="x" size={24} color="#FFF" /></TouchableOpacity></View><FlatList data={hotels.filter(h => h.city === targetCityForHotel)} keyExtractor={item => item.id} renderItem={({ item }) => (<TouchableOpacity style={styles.hotelItem} onPress={() => { if (targetCityForHotel === 'Makkah') setQuote(prev => ({ ...prev, hotelMakkah: item.name })); else if (targetCityForHotel === 'Medina') setQuote(prev => ({ ...prev, hotelMedina: item.name })); else if (targetCityForHotel === 'Jeddah') setQuote(prev => ({ ...prev, hotelJeddah: item.name })); setHotelModalVisible(false); }}><Text style={styles.hotelItemName}>{item.name}</Text><Feather name="chevron-left" size={20} color="#F3C764" /></TouchableOpacity>)} /></View></View></Modal>
-        <Modal visible={genericModalVisible} animationType="slide" transparent={true}><View style={styles.modalOverlay}><View style={styles.modalContent}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Sélection</Text><TouchableOpacity onPress={() => setGenericModalVisible(false)}><Feather name="x" size={24} color="#FFF" /></TouchableOpacity></View><FlatList data={targetFieldForGeneric === 'destination' ? tripOptions.destinations : targetFieldForGeneric === 'period' ? tripOptions.periods : tripOptions.transports} keyExtractor={item => item._id} renderItem={({ item }) => (<TouchableOpacity style={styles.hotelItem} onPress={() => { setQuote(prev => ({ ...prev, [targetFieldForGeneric]: item.label })); setGenericModalVisible(false); }}><Text style={styles.hotelItemName}>{item.label}</Text><Feather name="check" size={20} color={quote[targetFieldForGeneric] === item.label ? "#F3C764" : "transparent"} /></TouchableOpacity>)} /></View></View></Modal>
+        <Modal visible={hotelModalVisible} animationType="slide" transparent={true}><View style={styles.modalOverlay}><View style={styles.modalContent}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Sélection Hôtel ({targetCityForHotel})</Text><TouchableOpacity onPress={() => setHotelModalVisible(false)}><Feather name="x" size={24} color="#FFF" /></TouchableOpacity></View><TextInput style={styles.searchInput} placeholder="Rechercher..." placeholderTextColor="#8A95A5" value={searchQuery} onChangeText={setSearchQuery} /><FlatList data={filteredHotels.length > 0 ? filteredHotels : []} keyExtractor={item => item.id} renderItem={({ item }) => (<TouchableOpacity style={styles.hotelItem} onPress={() => { if (targetCityForHotel === 'Makkah') setQuote(prev => ({ ...prev, hotelMakkah: item.name })); else if (targetCityForHotel === 'Medina') setQuote(prev => ({ ...prev, hotelMedina: item.name })); else if (targetCityForHotel === 'Jeddah') setQuote(prev => ({ ...prev, hotelJeddah: item.name })); setHotelModalVisible(false); }}><Text style={styles.hotelItemName}>{item.name}</Text><Feather name="chevron-left" size={20} color="#F3C764" /></TouchableOpacity>)} /></View></View></Modal>
+        
+        <Modal visible={genericModalVisible} animationType="slide" transparent={true}><View style={styles.modalOverlay}><View style={styles.modalContent}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Sélection</Text><TouchableOpacity onPress={() => setGenericModalVisible(false)}><Feather name="x" size={24} color="#FFF" /></TouchableOpacity></View><TextInput style={styles.searchInput} placeholder="Rechercher..." placeholderTextColor="#8A95A5" value={searchQuery} onChangeText={setSearchQuery} /><FlatList data={getOptionsList()} keyExtractor={item => item._id} renderItem={({ item }) => (<TouchableOpacity style={styles.hotelItem} onPress={() => { setQuote(prev => ({ ...prev, [targetFieldForGeneric]: item.label })); setGenericModalVisible(false); }}><Text style={styles.hotelItemName}>{item.label}</Text><Feather name="check" size={20} color={quote[targetFieldForGeneric] === item.label ? "#F3C764" : "transparent"} /></TouchableOpacity>)} /></View></View></Modal>
+        
         {activeDatePicker && <DateTimePicker value={parseDateString(quote.dates?.[activeDatePicker])} mode="date" display={Platform.OS === 'ios' ? 'spinner' : 'default'} onChange={onDateChange} textColor="#FFF" />}
 
       </KeyboardAvoidingView>
@@ -555,8 +483,8 @@ const SectionHeader = ({ title, icon }) => (
   </View>
 );
 
-const InputField = ({ label, value, onChangeText, placeholder, keyboardType, multiline }) => (
-  <View style={{ marginBottom: 12, width: '100%' }}>
+const InputField = ({ label, value, onChangeText, placeholder, keyboardType, multiline, style }) => (
+  <View style={[{ marginBottom: 12, width: '100%' }, style]}>
     <Text style={styles.label}>{label}</Text>
     <TextInput 
       value={String(value || '')} 
@@ -608,7 +536,7 @@ const SmallChip = ({ label, active, onPress }) => (
 );
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#050B14', paddingTop: Platform.OS === "android" ? StatusBar.currentHeight : 0 },
+  container: { flex: 1, backgroundColor: '#050B14', paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 },
   header: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'space-between', padding: 20, backgroundColor: '#050B14', borderBottomWidth: 1, borderColor: '#222' },
   headerTitle: { color: '#FFF', fontSize: 18, fontWeight: 'bold' },
   headerSub: { color: '#F3C764', fontSize: 12 },
@@ -662,4 +590,5 @@ const styles = StyleSheet.create({
   receiptBtn: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', backgroundColor: '#E67E22', padding: 10, borderRadius: 8, marginTop: 10, alignSelf: 'center' },
   receiptBtnText: { color: '#050B14', fontSize: 12, fontWeight: 'bold', marginLeft: 8 },
   checkboxContainer: { flexDirection: 'row', alignItems: 'center' },
+  searchInput: { backgroundColor: '#09121F', color: '#FFF', borderRadius: 8, padding: 12, borderWidth: 1, borderColor: '#333', fontSize: 14, marginBottom: 10 },
 });

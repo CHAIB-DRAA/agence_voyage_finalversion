@@ -161,9 +161,9 @@ export default function AddEditQuote({ navigation, route }) {
     });
 
     const extra = safeParse(quote.extraCosts);
-    const totalExpenses = totalHotelsOnly + totalFixedCosts + extra;
+    const totalExpenses = totalHotelsOnly + totalFixedCosts ;
     const margin = safeParse(quote.margin);
-    const grandTotal = totalExpenses + margin;
+    const grandTotal = totalExpenses + margin + extra;
     const advance = safeParse(quote.advanceAmount);
     const remaining = grandTotal - advance;
 

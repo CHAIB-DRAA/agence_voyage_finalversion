@@ -30,14 +30,20 @@ export default function QuotesList({ navigation, route }) {
       const data = await api.getQuotes();
       let safeData = Array.isArray(data) ? data : [];
       
-      // Filtrage intelligent : 
-      // Si filterUser est 'Client (Web)', on montre tout ce qui vient du web (clic depuis dashboard)
-      // Sinon, logique standard (Admin voit tout, Vendeur voit ses devis)
+      // --- LOGIQUE DE FILTRAGE INTELLIGENTE ---
+      
+      // CAS 1 : Vue "Demandes Web" (depuis l'alerte du Dashboard)
       if (filterUser === 'Client (Web)') {
-         safeData = safeData.filter(q => q.createdBy === 'Client (Web)');
-      } else if (!isAdmin && filterUser) {
+         // On ne montre QUE les demandes Web qui sont EN ATTENTE
+         // Dès qu'elles sont traitées (confirmées/annulées), elles disparaissent de cette vue
+         safeData = safeData.filter(q => q.createdBy === 'Client (Web)' && q.status === 'pending');
+      } 
+      // CAS 2 : Vue Vendeur (Non Admin)
+      else if (!isAdmin && filterUser) {
         safeData = safeData.filter(q => q.createdBy === filterUser || !q.createdBy);
       }
+      // CAS 3 : Vue Admin (Archive complète)
+      // Pas de filtre, on montre tout.
       
       setAllQuotes(safeData);
       
@@ -135,7 +141,6 @@ export default function QuotesList({ navigation, route }) {
 
           <View style={styles.metaRow}>
             
-            {/* --- BADGE CRÉATEUR SPÉCIAL --- */}
             {isWeb ? (
                <View style={[styles.creatorTag, {backgroundColor: '#3498DB'}]}>
                   <Text style={[styles.creatorText, {color: '#FFF'}]}>🌐 طلب أونلاين</Text>
@@ -184,7 +189,7 @@ export default function QuotesList({ navigation, route }) {
             <Feather name="arrow-right" size={24} color="#F3C764" />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>
-            {filterUser === 'Client (Web)' ? 'طلبات الموقع' : (filterUser ? 'عروضي' : 'أرشيف العروض')}
+            {filterUser === 'Client (Web)' ? 'طلبات الموقع (En attente)' : (filterUser ? 'عروضي' : 'أرشيف العروض')}
           </Text>
         </View>
 
@@ -209,8 +214,9 @@ export default function QuotesList({ navigation, route }) {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#F3C764" />}
         ListEmptyComponent={!loading && (
           <View style={styles.emptyContainer}>
-            <Feather name="inbox" size={50} color="rgba(255,255,255,0.1)" />
-            <Text style={styles.emptyTitle}>القائمة فارغة</Text>
+            <Feather name="check-circle" size={50} color="rgba(46, 204, 113, 0.3)" />
+            <Text style={styles.emptyTitle}>لا توجد طلبات جديدة</Text>
+            <Text style={styles.emptySub}>Toutes les demandes web ont été traitées !</Text>
           </View>
         )}
       />
@@ -229,52 +235,36 @@ export default function QuotesList({ navigation, route }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#050B14' },
-  
   headerContainer: { backgroundColor: '#050B14', paddingBottom: 15, paddingTop: 10, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: 'rgba(255,255,255,0.05)' },
   topBar: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 15 },
   headerTitle: { flex: 1, color: '#F3C764', fontSize: 22, fontWeight: '800', textAlign: 'center', marginRight: -30 },
   backBtn: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
-  
   searchBarContainer: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: '#101A2D', borderRadius: 12, paddingHorizontal: 12, height: 46, borderWidth: 1, borderColor: 'rgba(255,255,255,0.05)' },
   searchInput: { flex: 1, color: '#FFF', fontSize: 16, marginRight: 10, height: '100%' },
-  
   listContent: { padding: 20, paddingBottom: 100 },
-  
-  // --- CARD DESIGN ---
   cardContainer: { backgroundColor: '#101A2D', borderRadius: 16, marginBottom: 16, borderWidth: 1, borderLeftWidth: 4, overflow: 'hidden', shadowColor: "#000", shadowOffset: {width: 0, height: 2}, shadowOpacity: 0.25, shadowRadius: 3.84, elevation: 5 },
   cardMainArea: { padding: 16 },
-
   cardHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   date: { color: '#556', fontSize: 12, fontWeight: '500' },
   statusBadge: { flexDirection: 'row-reverse', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
   statusText: { fontSize: 12, fontWeight: 'bold' },
-
   mainInfo: { marginBottom: 10 },
   clientName: { color: '#FFF', fontSize: 20, fontWeight: 'bold', textAlign: 'right', marginBottom: 4 },
   destination: { color: '#8A95A5', fontSize: 14, textAlign: 'right' },
-
   metaRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   creatorText: { color: '#556', fontSize: 11, fontStyle: 'italic' },
-  
-  // Styles badge spécifique pour web
   creatorTag: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  
   nightsText: { color: '#8A95A5', fontSize: 12 },
-
   priceRow: { flexDirection: 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', marginTop: 5 },
   totalLabel: { color: '#8A95A5', fontSize: 12, marginLeft: 8 },
   totalPrice: { color: '#F3C764', fontSize: 22, fontWeight: 'bold' },
-
-  // --- ACTIONS ---
   actionBar: { flexDirection: 'row', borderTopWidth: 1, borderTopColor: 'rgba(255,255,255,0.05)', backgroundColor: 'rgba(0,0,0,0.2)' },
   actionBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 14 },
   actionText: { marginLeft: 8, fontWeight: '600', fontSize: 14 },
   divider: { width: 1, backgroundColor: 'rgba(255,255,255,0.05)' },
-
-  // --- EMPTY & LOADING ---
   emptyContainer: { alignItems: 'center', justifyContent: 'center', marginTop: 80 },
   emptyTitle: { color: '#666', fontSize: 18, fontWeight: '700', marginTop: 10 },
+  emptySub: { color: '#444', marginTop: 5 },
   loaderCenter: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(5,11,20,0.5)' },
-  
   fab: { position: 'absolute', bottom: 30, left: 30, width: 60, height: 60, borderRadius: 30, backgroundColor: '#F3C764', alignItems: 'center', justifyContent: 'center', shadowColor: '#F3C764', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.4, shadowRadius: 8, elevation: 8 },
 });

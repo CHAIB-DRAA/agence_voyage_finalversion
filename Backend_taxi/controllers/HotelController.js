@@ -28,15 +28,36 @@ exports.createHotel = async (req, res) => {
   }
 };
 
+
 // PUT : Modifier les prix ou infos d'un hôtel
 exports.updateHotel = async (req, res) => {
-  console.log(`🔄 [CONTROLLER] Modification hôtel ID : ${req.params.id}...`);
+  const hotelId = req.params.id;
+  console.log(`🔄 [CONTROLLER] Modification hôtel ID : ${hotelId}`);
+  
+  // DEBUG CRITIQUE : Vérifions si seasonalPrices arrive bien au serveur
+  if (req.body.seasonalPrices) {
+    console.log(`📦 seasonalPrices reçus (${req.body.seasonalPrices.length} éléments)`);
+  } else {
+    console.warn('⚠️ AUCUN seasonalPrices trouvé dans req.body !');
+  }
+
   try {
-    const updated = await Hotel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Utilisation explicite de $set pour forcer la mise à jour des champs envoyés
+    // Cela contourne parfois des blocages bizarres de Mongoose sur les tableaux mixtes
+    const updated = await Hotel.findByIdAndUpdate(
+      hotelId,
+      { $set: req.body }, 
+      { new: true, runValidators: true } // runValidators assure que le schéma est respecté
+    );
+
     if (!updated) return res.status(404).json({ error: "Hôtel introuvable" });
-    console.log('✅ [CONTROLLER] Hôtel mis à jour.');
+    
+    // Vérification finale après enregistrement
+    console.log(`✅ [DB] Saisonniers enregistrés en base : ${updated.seasonalPrices?.length || 0}`);
+    
     res.json({ ...updated._doc, id: updated._id });
   } catch (err) {
+    console.error('❌ [CONTROLLER] Erreur Update :', err.message);
     res.status(400).json({ error: err.message });
   }
 };

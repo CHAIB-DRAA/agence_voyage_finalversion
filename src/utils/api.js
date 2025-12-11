@@ -212,6 +212,69 @@ export default {
     } catch (error) { throw error; }
   },
 
+  getHotels: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/hotels`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return await response.json();
+    } catch (error) { return []; }
+  },
+
+  saveHotel: async (hotelData) => {
+    try {
+      const headers = await getAuthHeaders();
+      // CRITIQUE : On s'assure que le serveur sait qu'on envoie du JSON
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+      const isEdit = !!hotelData.id;
+      const url = isEdit ? `${API_BASE_URL}/hotels/${hotelData.id}` : `${API_BASE_URL}/hotels`;
+      const method = isEdit ? 'PUT' : 'POST';
+      
+      // Sécurisation : on retire l'ID du payload pour éviter les conflits
+      const bodyData = isEdit ? hotelData : (({ id, ...o }) => o)(hotelData);
+
+      // DEBUG : Vérifie dans la console React Native/Expo que "seasonalPrices" est bien rempli ici
+      console.log("💾 [API] Envoi saveHotel :", JSON.stringify(bodyData, null, 2));
+
+      const response = await fetch(url, {
+        method: method,
+        headers: headers,
+        body: JSON.stringify(bodyData),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text(); 
+        console.error("❌ [API] Erreur saveHotel :", errorText);
+        throw new Error(errorText || 'Erreur sauvegarde');
+      }
+      return await response.json();
+    } catch (error) { throw error; }
+  },
+
+  // CORRECTION : Passage en PUT car ton routeur n'a pas de route PATCH
+  saveSeasonalPrices: async (hotelId, seasonalPrices) => {
+    try {
+      const headers = await getAuthHeaders();
+      if (!headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+      // On utilise la route PUT existante (/hotels/:id).
+      // Mongoose 'findByIdAndUpdate' ne modifie que les champs envoyés (patch partiel), 
+      // donc envoyer juste { seasonalPrices } est sûr et ne supprimera pas le reste.
+      const url = `${API_BASE_URL}/hotels/${hotelId}`; 
+      
+      console.log("💾 [API] Force Update Prices...", seasonalPrices.length);
+
+      const response = await fetch(url, {
+        method: 'PUT', // Changé de PATCH à PUT pour correspondre à routes/hotels.js
+        headers: headers,
+        body: JSON.stringify({ seasonalPrices: seasonalPrices }),
+      });
+
+      if (!response.ok) throw new Error('Erreur lors de la sauvegarde des prix saisonniers');
+      return await response.json();
+    } catch (error) { throw error; }
+  },
+
   deleteHotel: async (id) => {
     try {
       const headers = await getAuthHeaders();

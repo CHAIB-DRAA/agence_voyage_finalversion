@@ -97,6 +97,7 @@ export default function AdminHotels({ navigation, route }) {
     const hotelData = {
       ...emptyHotel,
       ...hotel,
+      id: hotel.id || hotel._id, 
       prices: { ...emptyHotel.prices, ...(hotel.prices || {}) },
       seasonalPrices: hotel.seasonalPrices || []
     };
@@ -158,10 +159,21 @@ export default function AdminHotels({ navigation, route }) {
   };
 
   const updateSeasonPrice = (seasonIndex, type, value) => {
-    const updated = [...currentHotel.seasonalPrices];
-    // On met à jour le prix spécifique dans l'objet imbriqué
-    updated[seasonIndex].prices[type] = value;
-    setCurrentHotel(prev => ({ ...prev, seasonalPrices: updated }));
+    // CORRECTION : Copie profonde pour que React détecte le changement
+    const updatedSeasons = currentHotel.seasonalPrices.map((season, index) => {
+      if (index === seasonIndex) {
+        return {
+          ...season,
+          prices: {
+            ...season.prices,
+            [type]: value
+          }
+        };
+      }
+      return season;
+    });
+
+    setCurrentHotel(prev => ({ ...prev, seasonalPrices: updatedSeasons }));
   };
 
   const renderItem = ({ item }) => (
@@ -179,16 +191,14 @@ export default function AdminHotels({ navigation, route }) {
         {isAdmin && (
           <View style={styles.actions}>
             <TouchableOpacity onPress={() => openEdit(item)} style={styles.iconBtn}><Feather name="edit-2" size={20} color="#F3C764" /></TouchableOpacity>
-            <TouchableOpacity onPress={() => handleDelete(item.id)} style={styles.iconBtn}><Feather name="trash-2" size={20} color="#E74C3C" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => handleDelete(item.id || item._id)} style={styles.iconBtn}><Feather name="trash-2" size={20} color="#E74C3C" /></TouchableOpacity>
           </View>
         )}
       </View>
       <View style={styles.priceGrid}>
-        <Text style={styles.priceText}>Base Double: {item.prices?.double} DA</Text>
+        <Text style={styles.priceText}>Base Double: {item.prices?.double || '0'} DA</Text>
         {item.seasonalPrices && item.seasonalPrices.length > 0 && (
-          <Text style={[styles.priceText, {color: '#2ECC71', marginTop: 4}]}>
-            + {item.seasonalPrices.length} tarifs saisonniers (Ramadan...)
-          </Text>
+          <Text style={[styles.priceText, {color: '#2ECC71', marginTop: 4}]}>+ {item.seasonalPrices.length} tarifs saisonniers</Text>
         )}
       </View>
     </View>
@@ -203,7 +213,13 @@ export default function AdminHotels({ navigation, route }) {
         {isAdmin && <TouchableOpacity onPress={openNew} style={styles.addButton}><Feather name="plus" size={24} color="#050B14" /></TouchableOpacity>}
       </View>
 
-      <FlatList data={hotels} keyExtractor={item => item.id} renderItem={renderItem} contentContainerStyle={{ padding: 20 }} />
+      <FlatList 
+        data={hotels} 
+        keyExtractor={item => item.id || item._id} 
+        renderItem={renderItem} 
+        contentContainerStyle={{ padding: 20 }} 
+        ListEmptyComponent={!loading && <Text style={styles.emptyText}>Aucun hôtel.</Text>}
+      />
 
       <Modal visible={modalVisible} animationType="slide" presentationStyle="pageSheet" onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalContainer}>
@@ -223,19 +239,27 @@ export default function AdminHotels({ navigation, route }) {
 
           <ScrollView contentContainerStyle={{ padding: 20 }}>
             
+            {/* --- Utilisation de View au lieu de Fragment pour éviter le crash --- */}
             {modalTab === 'base' ? (
-              <>
-                {/* --- ONGLET BASE --- */}
+              <View>
                 <View style={styles.row}>
-                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Makkah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Makkah'})}><Text style={styles.cityText}>Makkah</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Medina' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Medina'})}><Text style={styles.cityText}>Medina</Text></TouchableOpacity>
-                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Jeddah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Jeddah'})}><Text style={styles.cityText}>Jeddah</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Makkah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Makkah'})}><Text style={[styles.cityText, currentHotel.city === 'Makkah' && {color: '#050B14'}]}>Makkah</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Medina' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Medina'})}><Text style={[styles.cityText, currentHotel.city === 'Medina' && {color: '#050B14'}]}>Medina</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.cityBtn, currentHotel.city === 'Jeddah' && styles.cityBtnActive]} onPress={() => setCurrentHotel({...currentHotel, city: 'Jeddah'})}><Text style={[styles.cityText, currentHotel.city === 'Jeddah' && {color: '#050B14'}]}>Jeddah</Text></TouchableOpacity>
                 </View>
 
+                <Text style={styles.label}>Nom</Text>
                 <TextInput style={styles.input} value={currentHotel.name} onChangeText={t => setCurrentHotel({...currentHotel, name: t})} placeholder="Nom hôtel" placeholderTextColor="#556" textAlign="right"/>
+                
                 <View style={styles.row}>
-                  <TextInput style={[styles.input, {flex:1}]} value={currentHotel.distance} onChangeText={t => setCurrentHotel({...currentHotel, distance: t})} placeholder="Distance" placeholderTextColor="#556"/>
-                  <TextInput style={[styles.input, {flex:1, marginLeft:10}]} value={currentHotel.stars} onChangeText={t => setCurrentHotel({...currentHotel, stars: t})} placeholder="Étoiles" keyboardType="numeric" placeholderTextColor="#556"/>
+                  <View style={{flex:1, marginRight:10}}>
+                    <Text style={styles.label}>Distance (m)</Text>
+                    <TextInput style={styles.input} value={currentHotel.distance} onChangeText={t => setCurrentHotel({...currentHotel, distance: t})} placeholder="50m" placeholderTextColor="#556" textAlign="right"/>
+                  </View>
+                  <View style={{flex:1}}>
+                    <Text style={styles.label}>Étoiles</Text>
+                    <TextInput style={styles.input} value={String(currentHotel.stars)} onChangeText={t => setCurrentHotel({...currentHotel, stars: t})} placeholder="0-5" keyboardType="numeric" placeholderTextColor="#556" textAlign="right"/>
+                  </View>
                 </View>
 
                 <View style={styles.divider} />
@@ -249,19 +273,18 @@ export default function AdminHotels({ navigation, route }) {
                     </TouchableOpacity>
                     {activeTypes[type.key] && (
                       <View style={styles.priceInputContainer}>
-                        <TextInput style={styles.priceInput} value={currentHotel.prices[type.key]} onChangeText={t => updateBasePrice(type.key, t)} keyboardType="numeric" placeholder="0" placeholderTextColor="#556"/>
+                        <TextInput style={styles.priceInput} value={String(currentHotel.prices[type.key] || '')} onChangeText={t => updateBasePrice(type.key, t)} keyboardType="numeric" placeholder="0" placeholderTextColor="#556"/>
                         <Text style={{color:'#F3C764', fontSize:12, marginLeft:5}}>DA</Text>
                       </View>
                     )}
                   </View>
                 ))}
-              </>
+              </View>
             ) : (
-              <>
-                {/* --- ONGLET SAISONS --- */}
+              <View>
                 <Text style={{color:'#888', marginBottom:15, fontSize:13, textAlign:'center'}}>
                    Définissez ici les tarifs pour le Ramadan, Mawlid, etc. {"\n"}
-                   Si une chambre est à 0, le prix de base sera utilisé.
+                   (Incluant Penta et Suite)
                 </Text>
 
                 {currentHotel.seasonalPrices.map((season, seasonIndex) => (
@@ -270,19 +293,17 @@ export default function AdminHotels({ navigation, route }) {
                       <Text style={styles.seasonTitle}>{season.periodName}</Text>
                       <TouchableOpacity onPress={() => removeSeason(seasonIndex)}><Feather name="trash-2" size={20} color="#E74C3C" /></TouchableOpacity>
                     </View>
-                    
-                    {/* Grille de prix pour la saison */}
                     <View style={styles.seasonGrid}>
                         {ROOM_TYPES.map((type) => (
                            <View key={type.key} style={styles.seasonInputWrapper}>
                               <Text style={styles.seasonLabel}>{type.key.charAt(0).toUpperCase() + type.key.slice(1)}</Text>
                               <TextInput 
                                 style={styles.seasonInput} 
-                                value={season.prices[type.key]} 
+                                value={String(season.prices[type.key] || '')} 
                                 onChangeText={t => updateSeasonPrice(seasonIndex, type.key, t)} 
                                 keyboardType="numeric" 
-                                placeholder="0"
-                                placeholderTextColor="#556"
+                                placeholder="0" 
+                                placeholderTextColor="#556" 
                               />
                            </View>
                         ))}
@@ -301,7 +322,7 @@ export default function AdminHotels({ navigation, route }) {
                     <Text style={{color:'#666'}}>Aucune période configurée dans les réglages.</Text>
                   )}
                 </View>
-              </>
+              </View>
             )}
 
             <TouchableOpacity style={styles.saveBtn} onPress={handleSave} disabled={saving}>
@@ -335,7 +356,6 @@ const styles = StyleSheet.create({
   iconBtn: { padding: 5 },
   priceGrid: { marginTop: 10 },
   priceText: { color: '#AAA', fontSize: 12, textAlign: 'right' },
-  
   modalContainer: { flex: 1, backgroundColor: '#050B14' },
   modalHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', padding: 20, borderBottomWidth: 1, borderColor: '#1F2937', marginTop: Platform.OS === 'ios' ? 20 : 0 },
   modalTitle: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
@@ -343,23 +363,20 @@ const styles = StyleSheet.create({
   modalTab: { flex: 1, padding: 15, alignItems: 'center' },
   modalTabActive: { backgroundColor: '#F3C764' },
   modalTabText: { color: '#888', fontWeight: 'bold' },
-  
   row: { flexDirection: 'row-reverse', gap: 10, marginBottom: 15 },
   cityBtn: { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#F3C764', alignItems: 'center', marginHorizontal: 2 },
   cityBtnActive: { backgroundColor: '#F3C764' },
-  cityText: { fontSize: 12, fontWeight: 'bold' },
-  input: { backgroundColor: '#101A2D', color: '#FFF', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#333' },
-  sectionTitle: { color: '#F3C764', fontSize: 16, marginBottom: 10, textAlign: 'right' },
-  
-  // Styles Checkbox Base
+  cityText: { fontSize: 12, fontWeight: 'bold', color: '#FFF' }, 
+  input: { backgroundColor: '#101A2D', color: '#FFF', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#333', textAlign:'right' },
+  label: { color: '#8A95A5', marginBottom: 6, textAlign: 'right', fontSize: 13 },
+  divider: { height: 1, backgroundColor: '#1F2937', marginVertical: 20 },
+  sectionTitle: { fontSize: 16, fontWeight: 'bold', textAlign: 'right', marginBottom: 5 },
   roomRow: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 12, justifyContent: 'space-between' },
   checkboxContainer: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', gap: 10, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333' },
   checkboxActive: { backgroundColor: '#F3C764', borderColor: '#F3C764' },
   checkboxLabel: { color: '#888', fontSize: 14 },
   priceInputContainer: { flex: 1, flexDirection: 'row-reverse', alignItems: 'center', marginLeft: 10 },
   priceInput: { flex: 1, backgroundColor: '#101A2D', color: '#FFF', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#333', textAlign:'center' },
-
-  // Styles Saisons
   seasonCard: { backgroundColor: '#1A2634', padding: 15, borderRadius: 10, marginBottom: 15, borderWidth: 1, borderColor: '#333' },
   seasonHeader: { flexDirection: 'row-reverse', justifyContent: 'space-between', marginBottom: 15, borderBottomWidth:1, borderColor:'#333', paddingBottom:5 },
   seasonTitle: { color: '#F3C764', fontWeight: 'bold', fontSize: 16 },
@@ -368,7 +385,7 @@ const styles = StyleSheet.create({
   seasonLabel: { color: '#AAA', fontSize: 10, marginBottom: 2, textAlign:'right' },
   seasonInput: { backgroundColor: '#09121F', color: '#FFF', padding: 8, borderRadius: 6, borderWidth: 1, borderColor: '#444', textAlign: 'center', fontSize: 12 },
   addSeasonBtn: { backgroundColor: '#3498DB', padding: 10, borderRadius: 20, flexDirection: 'row', alignItems: 'center' },
-
   saveBtn: { backgroundColor: '#F3C764', padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 20, marginBottom: 50 },
   saveText: { color: '#050B14', fontWeight: 'bold', fontSize: 16 },
+  emptyText: { color: '#888', textAlign: 'center', marginTop: 50, fontSize: 16 },
 });

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { 
   View, Text, TouchableOpacity, FlatList, StyleSheet, 
   SafeAreaView, StatusBar, TextInput, ActivityIndicator, 
-  RefreshControl, Keyboard, Alert, Linking, Switch
+  RefreshControl, Keyboard, Alert, Linking, Switch, Platform
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -65,14 +65,21 @@ export default function QuotesList({ navigation, route }) {
       filtered = filtered.filter(item => item.statustraitement === 'traité');
     }
 
-    // --- FILTRE RECHERCHE ---
+    // --- FILTRE RECHERCHE (Sécurisé pour Reference) ---
     if (searchQuery.trim() !== '') {
       const lowerText = searchQuery.toLowerCase();
       filtered = filtered.filter(item => {
-        const dest = item.destination ? item.destination.toLowerCase() : '';
-        const client = item.clientName ? item.clientName.toLowerCase() : '';
-        const phone = item.clientPhone ? item.clientPhone : '';
-        return dest.includes(lowerText) || client.includes(lowerText) || phone.includes(lowerText);
+        // Sécurisation des champs pour éviter les erreurs si null/undefined
+        const dest = item.destination ? String(item.destination).toLowerCase() : '';
+        const client = item.clientName ? String(item.clientName).toLowerCase() : '';
+        const phone = item.clientPhone ? String(item.clientPhone) : '';
+        // Conversion explicite en String pour la référence (au cas où ce soit un nombre)
+        const ref = item.reference ? String(item.reference).toLowerCase() : ''; 
+        
+        return dest.includes(lowerText) || 
+               client.includes(lowerText) || 
+               phone.includes(lowerText) || 
+               ref.includes(lowerText);
       });
     }
 
@@ -87,7 +94,6 @@ export default function QuotesList({ navigation, route }) {
     setUpdatingId(item.id || item._id);
 
     // 1. Mise à jour Optimiste (Visuelle immédiate)
-    // On met à jour la liste locale pour que l'interface réagisse tout de suite
     const updatedList = allQuotes.map(q => 
       (q.id === item.id || q._id === item._id) ? { ...q, statustraitement: newStatus } : q
     );
@@ -95,12 +101,11 @@ export default function QuotesList({ navigation, route }) {
 
     try {
       // 2. Envoi au Backend
-      // On envoie l'objet mis à jour. L'API saveQuote devrait gérer l'update si l'ID est présent.
       await api.saveQuote({ ...item, statustraitement: newStatus });
     } catch (error) {
       console.error("Erreur switch:", error);
       Alert.alert("Erreur", "Impossible de mettre à jour le statut");
-      loadQuotes(); // On recharge en cas d'erreur pour remettre les bonnes données
+      loadQuotes(); // On recharge en cas d'erreur
     } finally {
       setUpdatingId(null);
     }
@@ -173,7 +178,7 @@ export default function QuotesList({ navigation, route }) {
                         ios_backgroundColor="#3e3e3e"
                         onValueChange={() => toggleProcessingStatus(item)}
                         value={isTraite}
-                        style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }} // Switch plus petit et discret
+                        style={{ transform: [{ scaleX: 0.7 }, { scaleY: 0.7 }] }}
                     />
                 </View>
 
@@ -185,8 +190,16 @@ export default function QuotesList({ navigation, route }) {
             </View>
           </View>
 
-          {/* Info Client */}
+          {/* Info Client & Ref */}
           <View style={styles.mainInfo}>
+            {/* Affichage de la référence si présente */}
+            {item.reference ? (
+              <View style={styles.refContainer}>
+                 <Feather name="hash" size={10} color="#F3C764" />
+                 <Text style={styles.refText}>{item.reference}</Text>
+              </View>
+            ) : null}
+
             <Text style={styles.clientName} numberOfLines={1}>{item.clientName || 'Client Inconnu'}</Text>
             <Text style={styles.destination}>{item.destination || '---'} • {new Date(item.createdAt).toLocaleDateString('fr-FR')}</Text>
           </View>
@@ -255,7 +268,7 @@ export default function QuotesList({ navigation, route }) {
           <Feather name="search" size={20} color="#8A95A5" style={{ marginLeft: 10 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Rechercher (Nom, Tél...)"
+            placeholder="Rechercher (Réf, Nom, Tél...)" 
             placeholderTextColor="#556"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -323,6 +336,10 @@ const styles = StyleSheet.create({
   switchLabel: { fontSize: 10, fontWeight: 'bold', marginRight: 0 },
 
   mainInfo: { marginBottom: 8 },
+  // Style Reference
+  refContainer: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: 4, alignSelf: 'flex-end', gap: 4 },
+  refText: { color: '#F3C764', fontSize: 12, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', fontWeight: 'bold', letterSpacing: 0.5 },
+
   clientName: { color: '#FFF', fontSize: 18, fontWeight: 'bold', textAlign: 'right', marginBottom: 2 },
   destination: { color: '#8A95A5', fontSize: 13, textAlign: 'right' },
   metaRow: { flexDirection: 'row-reverse', justifyContent: 'space-between', alignItems: 'center', marginTop: 5 },

@@ -23,7 +23,7 @@ import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import api from '../utils/api'; 
 
-// --- CONSTANTES & STYLES GLOBAUX ---
+// --- CONSTANTES & STYLES ---
 const COLORS = {
   bg: '#050B14',
   card: '#101A2D',
@@ -38,13 +38,15 @@ const COLORS = {
 
 const emptyQuote = {
   id: null,
-  reference: '', // NOUVEAU CHAMP
+  reference: '', // Référence Unique
   status: 'pending',
   clientName: '',
   clientPhone: '',
   createdBy: '', 
   passportImage: null, 
   destination: '',
+  
+  // Séjour
   nightsMakkah: '0',
   nightsMedina: '0',
   nightsJeddah: '0',
@@ -56,21 +58,25 @@ const emptyQuote = {
   meals: [],
   transport: '', 
   
+  // Pax & Tarifs Différenciés
   numberOfAdults: '1',
   numberOfChildren: '0',
   
-  flightPrice: '0',      
-  flightPriceChild: '0', 
+  flightPrice: '0',      // Adulte
+  flightPriceChild: '0', // Enfant
   
   transportMakkahMedina: '', 
-  transportPrice: '0',      
-  transportPriceChild: '0', 
+  transportPrice: '0',      // Adulte
+  transportPriceChild: '0', // Enfant
   
-  visaPrice: '0',      
-  visaPriceChild: '0', 
+  visaPrice: '0',      // Adulte
+  visaPriceChild: '0', // Enfant
 
+  // Chambres
   quantities: { single: '0', double: '0', triple: '0', quad: '0', penta: '0', suite: '0' },
   prices: { single: '0', double: '0', triple: '0', quad: '0', penta: '0', suite: '0' },
+  
+  // Totaux
   totalAmount: '0',
   hotelTotal: '0',
   advanceAmount: '0', 
@@ -81,7 +87,7 @@ const emptyQuote = {
   notes: ''
 };
 
-// --- HELPERS LOGIQUES ---
+// --- HELPERS ---
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
   const parts = dateStr.split('/');
@@ -101,7 +107,7 @@ const calculateNights = (d1Str, d2Str) => {
   return diff > 0 ? diff : 0;
 };
 
-// Générateur de Référence Unique (Ex: QT-20231025-1234)
+// Générateur de Référence (Ex: QT-20251212-4829)
 const generateReference = () => {
   const now = new Date();
   const datePart = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
@@ -174,10 +180,12 @@ export default function AddEditQuote({ navigation, route }) {
     const numChildren = safeParse(quote.numberOfChildren);
     const totalPax = numAdults + numChildren; 
     
+    // Coûts Pondérés
     const flightCostTotal = (safeParse(quote.flightPrice) * numAdults) + (safeParse(quote.flightPriceChild) * numChildren);
     const transportCostTotal = (safeParse(quote.transportPrice) * numAdults) + (safeParse(quote.transportPriceChild) * numChildren);
     const visaCostTotal = (safeParse(quote.visaPrice) * numAdults) + (safeParse(quote.visaPriceChild) * numChildren);
     
+    // Repas (pour tous les pax)
     let mealsCostPerPerson = 0;
     if (quote.meals?.length > 0) {
       quote.meals.forEach(mealLabel => {
@@ -249,7 +257,7 @@ export default function AddEditQuote({ navigation, route }) {
       setQuote({
         ...emptyQuote, 
         ...incoming,
-        // Si pas de référence, on en génère une (pour les vieux dossiers)
+        // Gestion de la référence existante ou création d'une nouvelle
         reference: incoming.reference || generateReference(), 
         numberOfAdults: defaultAdults,
         numberOfChildren: incoming.numberOfChildren || '0',
@@ -277,7 +285,7 @@ export default function AddEditQuote({ navigation, route }) {
         createdBy: incoming.createdBy || ''
       });
     } else {
-      // NOUVEAU DOSSIER : On génère la référence immédiatement
+      // NOUVEAU DOSSIER : Génération immédiate de la référence
       setQuote(prev => ({ 
           ...prev, 
           createdBy: creatorUsername, 
@@ -381,8 +389,7 @@ export default function AddEditQuote({ navigation, route }) {
       
       const finalPayload = {
         ...quote,
-        // On s'assure que la référence est bien là (au cas où)
-        reference: quote.reference || generateReference(),
+        reference: quote.reference || generateReference(), // Sécurité doublon
         numberOfPeople: String(totalPax),
         createdBy: isEditMode ? (quote.createdBy || creatorUsername || 'Admin') : (creatorUsername || 'Admin')
       };
@@ -457,7 +464,7 @@ export default function AddEditQuote({ navigation, route }) {
               </TouchableOpacity>
               <View style={{flex: 1, marginRight: 15}}>
                 
-                {/* CHAMP RÉFÉRENCE (Non modifiable manuellement pour éviter les erreurs, mais visible) */}
+                {/* CHAMP RÉFÉRENCE AUTOMATIQUE */}
                 <View style={{marginBottom: 10}}>
                     <Text style={styles.label}>رقم الملف (Reference)</Text>
                     <View style={[styles.inputContainer, {backgroundColor: '#1A273E', borderColor: COLORS.primary}]}>
@@ -469,6 +476,7 @@ export default function AddEditQuote({ navigation, route }) {
                 <InputField label="الاسم الكامل" value={quote.clientName} onChangeText={t => setQuote({...quote, clientName: t})} placeholder="اسم العميل" icon="user" />
                 <InputField label="رقم الهاتف" value={quote.clientPhone} onChangeText={t => setQuote({...quote, clientPhone: t})} placeholder="05 XX XX XX XX" keyboardType="phone-pad" icon="phone" />
                 
+                {/* SAISIE PAX ADULTES / ENFANTS */}
                 <View style={[styles.rowReverse, {marginTop: 5}]}>
                     <View style={{flex:1, marginLeft: 5}}>
                         <InputField label="عدد البالغين" value={quote.numberOfAdults} onChangeText={t => setQuote({...quote, numberOfAdults: t})} placeholder="1" keyboardType="numeric" icon="user" />
@@ -481,7 +489,7 @@ export default function AddEditQuote({ navigation, route }) {
             </View>
           </View>
 
-          {/* VOYAGE - MISE À JOUR AVEC PRIX DIFFERENCIES */}
+          {/* VOYAGE - PRIX DIFFÉRENCIÉS */}
           <View style={styles.card}>
             <SectionHeader title="تفاصيل الرحلة" icon="map" />
             
@@ -504,7 +512,7 @@ export default function AddEditQuote({ navigation, route }) {
 
             <View style={styles.divider} />
             
-            {/* TRANSPORT INTERNE : ADULTE vs ENFANT */}
+            {/* TRANSPORT INTERNE */}
             <Text style={styles.label}>النقل الداخلي</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{flexDirection:'row-reverse', marginBottom: 10}}>
                 {tripOptions.intercity.map(t => (<MealChip key={t._id} label={t.label} active={quote.transportMakkahMedina === t.label} onPress={() => setQuote(prev => ({ ...prev, transportMakkahMedina: t.label }))} />))}
@@ -519,7 +527,7 @@ export default function AddEditQuote({ navigation, route }) {
               </View>
             </View>
 
-            {/* VISA : ADULTE vs ENFANT */}
+            {/* VISA */}
             <View style={styles.rowReverse}>
               <View style={{flex:1, marginLeft:5}}>
                   <InputField label="تأشيرة (بالغ)" value={quote.visaPrice} onChangeText={t => setQuote({...quote, visaPrice: t})} keyboardType="numeric" placeholder="0" />

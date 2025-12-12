@@ -100,12 +100,12 @@ export default function QuoteDetails({ route, navigation }) {
   const [newAdvanceAmount, setNewAdvanceAmount] = useState('');
   const [savingAdvance, setSavingAdvance] = useState(false);
 
-  // --- ETAT POUR LES INFOS AGENCE (NOUVEAU) ---
+  // --- ETAT POUR LES INFOS AGENCE ---
   const [agencyInfo, setAgencyInfo] = useState([]);
 
   useEffect(() => {
     if(route.params?.quote) setQ(route.params.quote);
-    loadAgencySettings(); // On charge la config au montage
+    loadAgencySettings(); 
   }, [route.params?.quote]);
 
   // Récupération des paramètres agence depuis le backend
@@ -121,13 +121,28 @@ export default function QuoteDetails({ route, navigation }) {
   // Helper intelligent pour trouver une valeur agence par mots-clés
   const getAgencyVal = (keywords) => {
       if (!agencyInfo.length) return null;
-      // On cherche l'élément dont le label contient un des mots clés
       const item = agencyInfo.find(i => {
           const label = i.label?.toLowerCase() || '';
           return keywords.some(k => label.includes(k));
       });
       return item ? item.value : null;
   };
+
+  // --- LOGIQUE REFERENCE (AUTO-GENEREE SI ABSENTE) ---
+  const derivedReference = useMemo(() => {
+      // 1. Si la référence existe en base, on l'utilise
+      if (q.reference) return q.reference;
+      
+      // 2. Sinon, on génère une REF basée sur les 6 derniers caractères de l'ID
+      const id = q.id || q._id;
+      // Gestion ID Objet Mongo ou String
+      const idStr = (typeof id === 'object' && id?.$oid) ? id.$oid : id;
+
+      if (idStr && typeof idStr === 'string') {
+          return `REF-${idStr.slice(-6).toUpperCase()}`;
+      }
+      return null;
+  }, [q]);
 
   // Calculateur sécurisé
   const totals = useMemo(() => {
@@ -219,25 +234,27 @@ export default function QuoteDetails({ route, navigation }) {
 
   const handleCall = () => { if (q.clientPhone) { let phone = q.clientPhone.replace(/\D/g, ''); if (phone.startsWith('0')) phone = '213' + phone.substring(1); Linking.openURL(`tel:${phone}`); }};
   
-  // Utilisation du CCP dynamique depuis les settings
   const copyCCP = () => {
       const dynamicCCP = getAgencyVal(['ccp', 'compte', 'rib']) || AGENCY_CCP_DEFAULT;
       Alert.alert('CCP Agence', `Compte: ${dynamicCCP}\n(Copié dans le presse-papier)`);
   };
   
+  // --- PARTAGE WHATSAPP AVEC REF ---
   const shareToWhatsApp = () => {
-    const text = `*🕋 عرض عمرة: ${q.destination}*\n👤 العميل: ${q.clientName} (${totals.numPeople} أشخاص)\n📅 الفترة: ${q.period}\n----------------\n🏨 *الإقامة:*\n📍 المدينة: ${q.hotelMedina || '---'}\n📍 مكة: ${q.hotelMakkah || '---'}${q.hotelJeddah ? `\n📍 جدة: ${q.hotelJeddah}` : ''}\n----------------\n✈️ الطيران: ${q.transport}\n💰 *المبلغ الإجمالي: ${totals.grandTotal.toLocaleString()} د.ج*\n✅ المدفوع: ${totals.advance.toLocaleString()} د.ج\n🔴 المتبقي: ${totals.remaining.toLocaleString()} د.ج${q.notes ? `\n----------------\n📝 ${q.notes}` : ''}`;
+    const refText = derivedReference ? `🔖 Ref: *${derivedReference}*\n` : '';
+    const text = `*🕋 عرض عمرة: ${q.destination}*\n${refText}👤 العميل: ${q.clientName} (${totals.numPeople} أشخاص)\n📅 الفترة: ${q.period}\n----------------\n🏨 *الإقامة:*\n📍 المدينة: ${q.hotelMedina || '---'}\n📍 مكة: ${q.hotelMakkah || '---'}${q.hotelJeddah ? `\n📍 جدة: ${q.hotelJeddah}` : ''}\n----------------\n✈️ الطيران: ${q.transport}\n💰 *المبلغ الإجمالي: ${totals.grandTotal.toLocaleString()} د.ج*\n✅ المدفوع: ${totals.advance.toLocaleString()} د.ج\n🔴 المتبقي: ${totals.remaining.toLocaleString()} د.ج${q.notes ? `\n----------------\n📝 ${q.notes}` : ''}`;
+    
     let phoneParam = '';
     if (q.clientPhone) { let cleanPhone = q.clientPhone.replace(/\D/g, ''); if (cleanPhone.startsWith('0')) cleanPhone = '213' + cleanPhone.substring(1); phoneParam = `&phone=${cleanPhone}`; }
     Linking.openURL(`whatsapp://send?text=${encodeURIComponent(text)}${phoneParam}`);
   };
 
+  // --- PDF AVEC REF ---
   const generatePDF = async (mode) => {
     setLoadingPdf(true);
     try {
       const isClient = mode === 'client';
       
-      // --- RECUPERATION DONNEES AGENCE ---
       const agencyLogo = getAgencyVal(['logo', 'icon']);
       const agencyName = getAgencyVal(['nom', 'name', 'agence']) || 'وكالة السفر';
       const agencyPhone = getAgencyVal(['tél', 'phone', 'hatif']) || '';
@@ -256,7 +273,9 @@ export default function QuoteDetails({ route, navigation }) {
 
       const costSummaryBlock = !isClient ? `<div class="section-title">تحليل الربحية (Interne)</div><div class="cost-summary"><div class="cost-row"><span>المبيعات (Total Vente)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="cost-row"><span>التكلفة (Total Coût)</span><strong>${totals.expenses.toLocaleString()} DA</strong></div>${totals.extraCosts > 0 ? `<div class="cost-row"><span>مصاريف إضافية (Extra)</span><strong>${totals.extraCosts.toLocaleString()} DA</strong></div>` : ''}<div class="cost-row" style="border-top:1px solid #ccc; margin-top:5px; padding-top:5px;"><span>الربح الصافي (Marge)</span><strong style="color:${totals.margin >= 0 ? '#27ae60' : '#c0392b'}; font-size: 16px;">${totals.margin.toLocaleString()} DA (${totals.marginPercent}%)</strong></div></div>` : '';
       
-      // CSS et HTML mis à jour pour inclure l'en-tête Agence et le Cachet
+      // Ajout de la REF dans le HTML
+      const refBlock = derivedReference ? `<div style="background:#F3C764; color:#050B14; padding:5px 10px; border-radius:4px; font-weight:bold; display:inline-block; margin-bottom:10px;">${derivedReference}</div>` : '';
+
       const htmlContent = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>
         body{font-family:'Helvetica',sans-serif;padding:40px;color:#333;direction:rtl;text-align:right}
         .header-container{border-bottom:3px solid #F3C764;padding-bottom:20px;margin-bottom:30px;display:flex;justify-content:space-between;align-items:center}
@@ -287,7 +306,10 @@ export default function QuoteDetails({ route, navigation }) {
             <div class="agency-name">${agencyName}</div>
             <div class="agency-details">${agencyAddress} ${agencyPhone ? ' | 📞 ' + agencyPhone : ''}</div>
         </div>
-        <h1 class="invoice-title">${isClient?'عرض سعر':'تقرير داخلي'}</h1>
+        <div style="text-align:left;">
+            <h1 class="invoice-title">${isClient?'عرض سعر':'تقرير داخلي'}</h1>
+            ${refBlock}
+        </div>
       </div>
       
       <div class="client-box"><div style="color:#888;font-size:12px">العميل</div><div class="client-name">${q.clientName} (${totals.numPeople} أشخاص)</div><div>📞 ${q.clientPhone}</div>${!isClient&&q.passportImage?`<br/><strong>صورة الجواز:</strong><br/><img src="${q.passportImage}" class="passport-img"/>`:''}</div><div class="section-title">تفاصيل الرحلة</div><table><tr><td>الوجهة: <strong>${q.destination}</strong></td><td>الفترة: <strong>${q.period}</strong></td></tr><tr><td>الطيران: <strong>${q.transport}</strong></td><td>تأشيرة: <strong>${totals.visa>0?'نعم':'لا'}</strong></td></tr></table><div class="section-title">الإقامة</div><table><tr><td>المدينة: ${q.hotelMedina||'-'}</td><td>مكة: ${q.hotelMakkah||'-'}</td></tr>${q.hotelJeddah?`<tr><td colspan="2">جدة: ${q.hotelJeddah}</td></tr>`:''}</table><div class="section-title">الغرف</div><table><thead><tr><th>النوع</th><th style="text-align:center">العدد</th>${!isClient?'<th>S/Total</th>':''}</tr></thead><tbody>${tableRows}</tbody></table>${costSummaryBlock}<div class="total-box"><div class="total-row"><span>المبلغ الإجمالي (Total)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="total-row" style="color:#27ae60"><span>المدفوع (Avance)</span><strong>- ${totals.advance.toLocaleString()} DA</strong></div><div class="total-row grand-total" style="color:#c0392b"><span>المتبقي (Reste)</span><span>${totals.remaining.toLocaleString()} DA</span></div></div>${q.notes?`<div style="margin-top:20px;color:#666;"><strong>ملاحظات:</strong> ${q.notes}</div>`:''}
@@ -351,6 +373,15 @@ export default function QuoteDetails({ route, navigation }) {
               <Text style={styles.avatarText}>{q.clientName ? q.clientName.charAt(0).toUpperCase() : '?'}</Text>
             </View>
             <View style={styles.clientInfo}>
+              
+              {/* --- AJOUT AFFICHAGE REF (Utilisation de derivedReference) --- */}
+              {derivedReference ? (
+                  <View style={styles.refBadge}>
+                     <Feather name="hash" size={10} color={COLORS.bgDark} style={{marginRight: 4}} />
+                     <Text style={styles.refText}>{derivedReference}</Text>
+                  </View>
+              ) : null}
+
               <Text style={styles.clientLabel}>العميل (Client)</Text>
               <Text style={styles.clientName} numberOfLines={1}>{q.clientName}</Text>
               <TouchableOpacity onPress={handleCall} style={styles.phoneButton}>
@@ -556,7 +587,12 @@ const styles = StyleSheet.create({
   clientCardHeader: { flexDirection: 'row-reverse', alignItems: 'center', marginBottom: SPACING.m },
   avatarContainer: { width: 50, height: 50, borderRadius: 25, backgroundColor: COLORS.bgDark, alignItems: 'center', justifyContent: 'center', marginLeft: SPACING.m },
   avatarText: { color: COLORS.primary, fontSize: 24, fontWeight: 'bold' },
+  
   clientInfo: { flex: 1, alignItems: 'flex-end' },
+  // Nouveau style pour la REF dans la carte client
+  refBadge: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, marginBottom: 4 },
+  refText: { color: COLORS.bgDark, fontSize: 10, fontWeight: 'bold', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
+
   clientLabel: { color: COLORS.bgDark, fontSize: FONT_SIZE.s, opacity: 0.8 },
   clientName: { color: COLORS.bgDark, fontSize: 22, fontWeight: '900' },
   phoneButton: { flexDirection: 'row-reverse', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.1)', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 12, marginTop: 4 },

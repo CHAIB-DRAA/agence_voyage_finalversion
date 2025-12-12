@@ -1,6 +1,9 @@
 const mongoose = require('mongoose');
 
 const QuoteSchema = new mongoose.Schema({
+  // --- IDENTIFICATION ---
+  reference: { type: String, unique: true, sparse: true }, // Ajouté: Référence unique (ex: QT-20251212-1234)
+  
   // --- INFOS CLIENT ---
   clientName: String,
   clientPhone: String,
@@ -31,11 +34,19 @@ const QuoteSchema = new mongoose.Schema({
   transport: String,              
   transportMakkahMedina: String,  
   
-  // --- CHIFFRES CLÉS ---
+  // --- CHIFFRES CLÉS & TARIFS DIFFÉRENCIÉS ---
   numberOfPeople: { type: String, default: '1' }, 
-  flightPrice: { type: String, default: '0' },    
-  transportPrice: { type: String, default: '0' }, 
-  visaPrice: { type: String, default: '0' },
+  numberOfAdults: { type: String, default: '1' },
+  numberOfChildren: { type: String, default: '0' },
+  
+  flightPrice: { type: String, default: '0' },      // Adulte
+  flightPriceChild: { type: String, default: '0' }, // Enfant
+  
+  transportPrice: { type: String, default: '0' },      // Adulte
+  transportPriceChild: { type: String, default: '0' }, // Enfant
+  
+  visaPrice: { type: String, default: '0' },      // Adulte
+  visaPriceChild: { type: String, default: '0' }, // Enfant
   
   // --- QUANTITÉS ---
   quantities: {
@@ -47,7 +58,7 @@ const QuoteSchema = new mongoose.Schema({
     suite: { type: String, default: '0' }
   },
   
-  // --- PRIX ---
+  // --- PRIX UNITAIRES ---
   prices: {
     single: { type: String, default: '0' },
     double: { type: String, default: '0' },
@@ -63,7 +74,7 @@ const QuoteSchema = new mongoose.Schema({
   advanceAmount: { type: String, default: '0' },
   remainingAmount: { type: String, default: '0' },
   
-  // --- RENTABILITÉ (NOUVEAU) ---
+  // --- RENTABILITÉ ---
   expenses: { type: String, default: '0' },   // Coût total réel
   extraCosts: { type: String, default: '0' }, // Frais divers
   margin: { type: String, default: '0' },     // Bénéfice

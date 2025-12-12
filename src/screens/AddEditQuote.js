@@ -38,7 +38,7 @@ const COLORS = {
 
 const emptyQuote = {
   id: null,
-  reference: '', // Référence Unique
+  reference: '', // Champ Référence
   status: 'pending',
   clientName: '',
   clientPhone: '',
@@ -389,7 +389,7 @@ export default function AddEditQuote({ navigation, route }) {
       
       const finalPayload = {
         ...quote,
-        reference: quote.reference || generateReference(), // Sécurité doublon
+        reference: quote.reference || generateReference(), // Assurance Reference
         numberOfPeople: String(totalPax),
         createdBy: isEditMode ? (quote.createdBy || creatorUsername || 'Admin') : (creatorUsername || 'Admin')
       };

@@ -12,7 +12,6 @@ import {
   ActivityIndicator, 
   Platform,
   Image,
-  Dimensions,
   TextInput,
   Modal
 } from 'react-native';
@@ -130,26 +129,27 @@ export default function QuoteDetails({ route, navigation }) {
 
   // --- LOGIQUE REFERENCE (AUTO-GENEREE SI ABSENTE) ---
   const derivedReference = useMemo(() => {
-      // 1. Si la référence existe en base, on l'utilise
       if (q.reference) return q.reference;
-      
-      // 2. Sinon, on génère une REF basée sur les 6 derniers caractères de l'ID
       const id = q.id || q._id;
-      // Gestion ID Objet Mongo ou String
       const idStr = (typeof id === 'object' && id?.$oid) ? id.$oid : id;
-
       if (idStr && typeof idStr === 'string') {
           return `REF-${idStr.slice(-6).toUpperCase()}`;
       }
-      return null;
+      return 'DRAFT';
   }, [q]);
 
-  // Calculateur sécurisé
+  // --- CALCULATEUR COMPLET (ADULTES/ENFANTS) ---
   const totals = useMemo(() => {
-    if (!q) return { hotelTotal: 0, fixedTotal: 0, grandTotal: 0, numPeople: 1, flight: 0, transport: 0, visa: 0, advance: 0, remaining: 0, expenses: 0, margin: 0, extraCosts: 0, marginPercent: 0 };
+    if (!q) return { hotelTotal: 0, fixedTotal: 0, grandTotal: 0, numAdults: 1, numChildren: 0, totalPax: 1, flight: 0, transport: 0, visa: 0, advance: 0, remaining: 0, expenses: 0, margin: 0, extraCosts: 0, marginPercent: 0 };
     
     const safeParse = (val) => { const parsed = parseInt(val); return isNaN(parsed) ? 0 : parsed; };
 
+    // Pax
+    const numAdults = safeParse(q.numberOfAdults || q.numberOfPeople || 1);
+    const numChildren = safeParse(q.numberOfChildren || 0);
+    const totalPax = numAdults + numChildren;
+
+    // Hotels
     const p = q.prices || {};
     const qt = q.quantities || {};
     const hotelTotal = (safeParse(p.single) * safeParse(qt.single)) + 
@@ -159,12 +159,14 @@ export default function QuoteDetails({ route, navigation }) {
                        (safeParse(p.penta) * safeParse(qt.penta)) + 
                        (safeParse(p.suite) * safeParse(qt.suite));
 
-    const numPeople = safeParse(q.numberOfPeople) || 1;
-    const flight = safeParse(q.flightPrice);
-    const transport = safeParse(q.transportPrice);
-    const visa = safeParse(q.visaPrice);
-    const fixedTotal = (flight + transport + visa) * numPeople;
+    // Coûts Variables (Adulte vs Enfant)
+    const flightCost = (safeParse(q.flightPrice) * numAdults) + (safeParse(q.flightPriceChild) * numChildren);
+    const transportCost = (safeParse(q.transportPrice) * numAdults) + (safeParse(q.transportPriceChild) * numChildren);
+    const visaCost = (safeParse(q.visaPrice) * numAdults) + (safeParse(q.visaPriceChild) * numChildren);
     
+    const fixedTotal = flightCost + transportCost + visaCost;
+    
+    // Totaux Généraux
     const grandTotal = safeParse(q.totalAmount);
     const advance = safeParse(q.advanceAmount);
     const remaining = grandTotal - advance;
@@ -173,7 +175,13 @@ export default function QuoteDetails({ route, navigation }) {
     const extraCosts = safeParse(q.extraCosts);
     const marginPercent = grandTotal > 0 ? ((margin / grandTotal) * 100).toFixed(1) : 0;
 
-    return { hotelTotal: safeParse(q.hotelTotal) || hotelTotal, fixedTotal, grandTotal, numPeople, flight, transport, visa, advance, remaining, expenses, margin, marginPercent, extraCosts };
+    return { 
+        hotelTotal: safeParse(q.hotelTotal) || hotelTotal, 
+        fixedTotal, grandTotal, 
+        numAdults, numChildren, totalPax,
+        flightCost, transportCost, visaCost, 
+        advance, remaining, expenses, margin, marginPercent, extraCosts 
+    };
   }, [q]);
 
   if (!q) return null;
@@ -239,17 +247,15 @@ export default function QuoteDetails({ route, navigation }) {
       Alert.alert('CCP Agence', `Compte: ${dynamicCCP}\n(Copié dans le presse-papier)`);
   };
   
-  // --- PARTAGE WHATSAPP AVEC REF ---
   const shareToWhatsApp = () => {
     const refText = derivedReference ? `🔖 Ref: *${derivedReference}*\n` : '';
-    const text = `*🕋 عرض عمرة: ${q.destination}*\n${refText}👤 العميل: ${q.clientName} (${totals.numPeople} أشخاص)\n📅 الفترة: ${q.period}\n----------------\n🏨 *الإقامة:*\n📍 المدينة: ${q.hotelMedina || '---'}\n📍 مكة: ${q.hotelMakkah || '---'}${q.hotelJeddah ? `\n📍 جدة: ${q.hotelJeddah}` : ''}\n----------------\n✈️ الطيران: ${q.transport}\n💰 *المبلغ الإجمالي: ${totals.grandTotal.toLocaleString()} د.ج*\n✅ المدفوع: ${totals.advance.toLocaleString()} د.ج\n🔴 المتبقي: ${totals.remaining.toLocaleString()} د.ج${q.notes ? `\n----------------\n📝 ${q.notes}` : ''}`;
-    
+    const text = `*🕋 عرض عمرة: ${q.destination}*\n${refText}👤 العميل: ${q.clientName} (${totals.totalPax} أشخاص)\n📅 الفترة: ${q.period}\n----------------\n🏨 *الإقامة:*\n📍 المدينة: ${q.hotelMedina || '---'}\n📍 مكة: ${q.hotelMakkah || '---'}${q.hotelJeddah ? `\n📍 جدة: ${q.hotelJeddah}` : ''}\n----------------\n✈️ الطيران: ${q.transport}\n💰 *المبلغ الإجمالي: ${totals.grandTotal.toLocaleString()} د.ج*\n✅ المدفوع: ${totals.advance.toLocaleString()} د.ج\n🔴 المتبقي: ${totals.remaining.toLocaleString()} د.ج${q.notes ? `\n----------------\n📝 ${q.notes}` : ''}`;
     let phoneParam = '';
     if (q.clientPhone) { let cleanPhone = q.clientPhone.replace(/\D/g, ''); if (cleanPhone.startsWith('0')) cleanPhone = '213' + cleanPhone.substring(1); phoneParam = `&phone=${cleanPhone}`; }
     Linking.openURL(`whatsapp://send?text=${encodeURIComponent(text)}${phoneParam}`);
   };
 
-  // --- PDF AVEC REF ---
+  // --- PDF GENERATION ENGINE ---
   const generatePDF = async (mode) => {
     setLoadingPdf(true);
     try {
@@ -261,66 +267,168 @@ export default function QuoteDetails({ route, navigation }) {
       const agencyAddress = getAgencyVal(['adresse', 'siège', 'address']) || '';
       const agencyCachet = getAgencyVal(['cachet', 'tampon']);
 
-      let tableRows = '';
-      const addRow = (label, qty, price) => { if (!qty || qty === '0') return; tableRows += `<tr><td>${label}</td><td style="text-align:center">${qty}</td>${!isClient ? `<td class="price-col">${price} DA</td>` : ''}</tr>`; };
+      // --- HTML ROWS ---
+      let roomRows = '';
+      const addRoomRow = (label, qty, price) => { if (!qty || qty === '0') return; roomRows += `<tr><td>${label}</td><td class="text-center">${qty}</td>${!isClient ? `<td class="text-left">${parseInt(price).toLocaleString()}</td>` : ''}</tr>`; };
       
-      addRow('غرفة ثنائية (Double)', quantities.double, prices.double); 
-      addRow('غرفة ثلاثية (Triple)', quantities.triple, prices.triple); 
-      addRow('غرفة رباعية (Quad)', quantities.quad, prices.quad); 
-      addRow('غرفة خماسية (Penta)', quantities.penta, prices.penta); 
-      addRow('جناح (Suite)', quantities.suite, prices.suite); 
-      addRow('غرفة فردية (Single)', quantities.single, prices.single);
+      addRoomRow('غرفة ثنائية', quantities.double, prices.double); 
+      addRoomRow('غرفة ثلاثية', quantities.triple, prices.triple); 
+      addRoomRow('غرفة رباعية', quantities.quad, prices.quad); 
+      addRoomRow('غرفة خماسية', quantities.penta, prices.penta); 
+      addRoomRow('جناح', quantities.suite, prices.suite); 
+      addRoomRow('غرفة فردية', quantities.single, prices.single);
 
-      const costSummaryBlock = !isClient ? `<div class="section-title">تحليل الربحية (Interne)</div><div class="cost-summary"><div class="cost-row"><span>المبيعات (Total Vente)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="cost-row"><span>التكلفة (Total Coût)</span><strong>${totals.expenses.toLocaleString()} DA</strong></div>${totals.extraCosts > 0 ? `<div class="cost-row"><span>مصاريف إضافية (Extra)</span><strong>${totals.extraCosts.toLocaleString()} DA</strong></div>` : ''}<div class="cost-row" style="border-top:1px solid #ccc; margin-top:5px; padding-top:5px;"><span>الربح الصافي (Marge)</span><strong style="color:${totals.margin >= 0 ? '#27ae60' : '#c0392b'}; font-size: 16px;">${totals.margin.toLocaleString()} DA (${totals.marginPercent}%)</strong></div></div>` : '';
-      
-      // Ajout de la REF dans le HTML
-      const refBlock = derivedReference ? `<div style="background:#F3C764; color:#050B14; padding:5px 10px; border-radius:4px; font-weight:bold; display:inline-block; margin-bottom:10px;">${derivedReference}</div>` : '';
-
-      const htmlContent = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>
-        body{font-family:'Helvetica',sans-serif;padding:40px;color:#333;direction:rtl;text-align:right}
-        .header-container{border-bottom:3px solid #F3C764;padding-bottom:20px;margin-bottom:30px;display:flex;justify-content:space-between;align-items:center}
-        .agency-info { display: flex; flex-direction: column; }
-        .agency-logo { max-height: 80px; max-width: 150px; margin-bottom: 10px; }
-        .agency-name{font-size:22px;font-weight:bold;color:#050B14;text-transform:uppercase}
-        .agency-details { font-size: 12px; color: #555; margin-top: 5px; }
-        .invoice-title{font-size:32px;color:#F3C764;font-weight:bold;margin:0}
-        .client-box{background:#f8f9fa;padding:20px;border-radius:8px;margin-bottom:30px;border-right:5px solid #F3C764}
-        .client-name{font-size:24px;font-weight:bold;color:#050B14}
-        .section-title{font-size:18px;color:#050B14;font-weight:bold;margin-top:30px;margin-bottom:15px;border-bottom:1px solid #eee;padding-bottom:5px}
-        table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:15px}
-        th{background:#eee;padding:12px;text-align:right;font-weight:bold;color:#555}
-        td{padding:15px 12px;border-bottom:1px solid #ddd}
-        .total-box{margin-top:40px;background:#f9f9f9;padding:20px;border-radius:10px;border:1px solid #eee}
-        .total-row{display:flex;justify-content:space-between;margin-bottom:10px;font-size:16px}
-        .grand-total{font-size:24px;font-weight:900;color:#050B14;border-top:2px solid #F3C764;padding-top:10px}
-        .passport-img{max-width:200px;max-height:150px;border:1px solid #ccc;margin-top:10px;display:block}
-        .cost-summary{width:100%;background:#fffbe6;padding:15px;border-radius:8px;border:1px solid #eee}
-        .cost-row{display:flex;justify-content:space-between;margin-bottom:5px}
-        .footer-stamp { margin-top: 50px; display: flex; justify-content: flex-end; }
-        .stamp-img { width: 150px; opacity: 0.8; transform: rotate(-10deg); }
-      </style></head><body>
-      
-      <div class="header-container">
-        <div class="agency-info">
-            ${agencyLogo ? `<img src="${agencyLogo}" class="agency-logo" />` : ''}
-            <div class="agency-name">${agencyName}</div>
-            <div class="agency-details">${agencyAddress} ${agencyPhone ? ' | 📞 ' + agencyPhone : ''}</div>
-        </div>
-        <div style="text-align:left;">
-            <h1 class="invoice-title">${isClient?'عرض سعر':'تقرير داخلي'}</h1>
-            ${refBlock}
-        </div>
+      // --- INTERNAL BREAKDOWN BLOCK ---
+      const internalDetails = !isClient ? `
+      <div class="box mt-4">
+        <div class="box-title">تحليل التكاليف (Internal Cost Breakdown)</div>
+        <table class="cost-table">
+          <tr><th>البند</th><th>التفاصيل</th><th>التكلفة الإجمالية</th></tr>
+          <tr><td>تذاكر الطيران</td><td>${totals.numAdults} بالغ / ${totals.numChildren} أطفال</td><td>${totals.flightCost.toLocaleString()}</td></tr>
+          <tr><td>النقل والتأشيرة</td><td>شامل التنقلات والرسوم</td><td>${(totals.transportCost + totals.visaCost).toLocaleString()}</td></tr>
+          <tr><td>الفنادق</td><td>الإجمالي للإقامة</td><td>${totals.hotelTotal.toLocaleString()}</td></tr>
+          <tr><td>مصاريف إضافية</td><td>${q.extraCosts || 0}</td><td>${totals.extraCosts.toLocaleString()}</td></tr>
+          <tr class="total-row-internal"><td>الإجمالي (Coût)</td><td></td><td>${totals.expenses.toLocaleString()}</td></tr>
+          <tr class="margin-row"><td>الربح الصافي (Marge)</td><td>${totals.marginPercent}%</td><td>${totals.margin.toLocaleString()}</td></tr>
+        </table>
       </div>
-      
-      <div class="client-box"><div style="color:#888;font-size:12px">العميل</div><div class="client-name">${q.clientName} (${totals.numPeople} أشخاص)</div><div>📞 ${q.clientPhone}</div>${!isClient&&q.passportImage?`<br/><strong>صورة الجواز:</strong><br/><img src="${q.passportImage}" class="passport-img"/>`:''}</div><div class="section-title">تفاصيل الرحلة</div><table><tr><td>الوجهة: <strong>${q.destination}</strong></td><td>الفترة: <strong>${q.period}</strong></td></tr><tr><td>الطيران: <strong>${q.transport}</strong></td><td>تأشيرة: <strong>${totals.visa>0?'نعم':'لا'}</strong></td></tr></table><div class="section-title">الإقامة</div><table><tr><td>المدينة: ${q.hotelMedina||'-'}</td><td>مكة: ${q.hotelMakkah||'-'}</td></tr>${q.hotelJeddah?`<tr><td colspan="2">جدة: ${q.hotelJeddah}</td></tr>`:''}</table><div class="section-title">الغرف</div><table><thead><tr><th>النوع</th><th style="text-align:center">العدد</th>${!isClient?'<th>S/Total</th>':''}</tr></thead><tbody>${tableRows}</tbody></table>${costSummaryBlock}<div class="total-box"><div class="total-row"><span>المبلغ الإجمالي (Total)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="total-row" style="color:#27ae60"><span>المدفوع (Avance)</span><strong>- ${totals.advance.toLocaleString()} DA</strong></div><div class="total-row grand-total" style="color:#c0392b"><span>المتبقي (Reste)</span><span>${totals.remaining.toLocaleString()} DA</span></div></div>${q.notes?`<div style="margin-top:20px;color:#666;"><strong>ملاحظات:</strong> ${q.notes}</div>`:''}
-      
-      ${agencyCachet ? `<div class="footer-stamp"><img src="${agencyCachet}" class="stamp-img" /></div>` : ''}
-      
-      </body></html>`;
+      ` : '';
+
+      // --- CSS STYLES (Single Page Optimized) ---
+      const htmlContent = `
+      <!DOCTYPE html>
+      <html lang="ar" dir="rtl">
+      <head>
+        <meta charset="UTF-8">
+        <style>
+          @page { margin: 20px; }
+          body { font-family: 'Helvetica', sans-serif; color: #333; direction: rtl; margin: 0; padding: 0; font-size: 11px; }
+          .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #F3C764; padding-bottom: 10px; margin-bottom: 15px; }
+          .logo { max-height: 60px; max-width: 120px; }
+          .agency-name { font-size: 18px; font-weight: bold; color: #000; margin-bottom: 2px; }
+          .agency-contact { font-size: 10px; color: #555; }
+          .doc-title { font-size: 24px; font-weight: bold; color: #F3C764; text-transform: uppercase; }
+          .ref-badge { background: #000; color: #F3C764; padding: 3px 8px; border-radius: 4px; font-weight: bold; font-size: 10px; display: inline-block; margin-top: 5px; }
+          
+          .grid-container { display: flex; gap: 15px; margin-bottom: 15px; }
+          .box { flex: 1; border: 1px solid #ddd; border-radius: 6px; padding: 10px; background: #fcfcfc; }
+          .box-title { font-size: 12px; font-weight: bold; color: #F3C764; border-bottom: 1px solid #eee; padding-bottom: 4px; margin-bottom: 6px; text-transform: uppercase; }
+          .info-row { display: flex; justify-content: space-between; margin-bottom: 4px; border-bottom: 1px dotted #eee; padding-bottom: 2px; }
+          .info-label { color: #777; font-weight: bold; }
+          .info-val { font-weight: bold; color: #000; }
+          
+          table { width: 100%; border-collapse: collapse; font-size: 11px; }
+          th { background: #eee; padding: 6px; text-align: right; color: #444; border-bottom: 2px solid #ddd; }
+          td { padding: 6px; border-bottom: 1px solid #eee; }
+          .text-center { text-align: center; }
+          .text-left { text-align: left; }
+          
+          .total-section { display: flex; justify-content: flex-end; margin-top: 15px; }
+          .total-box { width: 200px; background: #000; color: #fff; padding: 10px; border-radius: 6px; }
+          .total-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
+          .grand-total { border-top: 1px solid #555; padding-top: 4px; margin-top: 4px; font-size: 14px; color: #F3C764; font-weight: bold; }
+          
+          .footer-section { margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-end; font-size: 10px; color: #777; }
+          .stamp-box { width: 100px; height: 80px; border: 1px dashed #ccc; display: flex; align-items: center; justify-content: center; color: #ccc; }
+          .stamp-img { width: 90px; opacity: 0.8; transform: rotate(-5deg); }
+          
+          /* Internal Report Specifics */
+          .cost-table th { background: #e0e0e0; }
+          .margin-row { background: #e8f5e9; font-weight: bold; color: #2e7d32; }
+          .total-row-internal { font-weight: bold; background: #fff3e0; }
+          
+          .mt-4 { margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        
+        <!-- HEADER -->
+        <div class="header">
+          <div>
+            ${agencyLogo ? `<img src="${agencyLogo}" class="logo" />` : ''}
+            <div class="agency-name">${agencyName}</div>
+            <div class="agency-contact">${agencyAddress}</div>
+            <div class="agency-contact">📞 ${agencyPhone}</div>
+          </div>
+          <div style="text-align: left;">
+            <div class="doc-title">${isClient ? 'عرض أسعار (Devis)' : 'تقرير (Rapport)'}</div>
+            <div class="ref-badge">${derivedReference}</div>
+            <div style="font-size: 10px; color: #777; margin-top: 4px;">Date: ${new Date().toLocaleDateString('fr-FR')}</div>
+          </div>
+        </div>
+
+        <!-- CLIENT & TRIP INFO GRID -->
+        <div class="grid-container">
+          <div class="box">
+            <div class="box-title">معلومات العميل (Client)</div>
+            <div class="info-row"><span class="info-label">الاسم:</span><span class="info-val">${q.clientName}</span></div>
+            <div class="info-row"><span class="info-label">الهاتف:</span><span class="info-val">${q.clientPhone}</span></div>
+            <div class="info-row"><span class="info-label">عدد الأشخاص:</span><span class="info-val">${totals.totalPax} (Ad: ${totals.numAdults}, Ch: ${totals.numChildren})</span></div>
+          </div>
+          <div class="box">
+            <div class="box-title">تفاصيل الرحلة (Voyage)</div>
+            <div class="info-row"><span class="info-label">الوجهة:</span><span class="info-val">${q.destination}</span></div>
+            <div class="info-row"><span class="info-label">الفترة:</span><span class="info-val">${q.period}</span></div>
+            <div class="info-row"><span class="info-label">الطيران:</span><span class="info-val">${q.transport}</span></div>
+          </div>
+        </div>
+
+        <!-- HOTELS -->
+        <div class="box" style="margin-bottom: 15px;">
+           <div class="box-title">الإقامة (Hôtels)</div>
+           <table style="margin:0;">
+             <tr><th>المدينة</th><th>الفندق</th></tr>
+             <tr><td>المدينة المنورة</td><td>${q.hotelMedina || '-'}</td></tr>
+             <tr><td>مكة المكرمة</td><td>${q.hotelMakkah || '-'}</td></tr>
+             ${q.hotelJeddah ? `<tr><td>جدة</td><td>${q.hotelJeddah}</td></tr>` : ''}
+           </table>
+        </div>
+
+        <!-- ROOMS TABLE -->
+        <div class="box">
+           <div class="box-title">توزيع الغرف (Chambres)</div>
+           <table>
+             <thead><tr><th>نوع الغرفة</th><th class="text-center">العدد</th>${!isClient ? '<th class="text-left">السعر</th>' : ''}</tr></thead>
+             <tbody>${roomRows || '<tr><td colspan="3" class="text-center">-</td></tr>'}</tbody>
+           </table>
+        </div>
+
+        <!-- INTERNAL DETAILS (IF ADMIN) -->
+        ${internalDetails}
+
+        <!-- FINANCIALS -->
+        <div class="total-section">
+           <div class="total-box">
+              <div class="total-row"><span>المبلغ الإجمالي</span><span>${totals.grandTotal.toLocaleString()} DA</span></div>
+              <div class="total-row" style="color: #2ECC71;"><span>المدفوع (Avance)</span><span>- ${totals.advance.toLocaleString()} DA</span></div>
+              <div class="total-row grand-total"><span>المتبقي (Reste)</span><span>${totals.remaining.toLocaleString()} DA</span></div>
+           </div>
+        </div>
+
+        <!-- NOTES -->
+        ${q.notes ? `<div style="margin-top:15px; font-size:10px; color:#555; background:#eee; padding:8px; border-radius:4px;"><strong>ملاحظات:</strong> ${q.notes}</div>` : ''}
+
+        <!-- FOOTER & STAMP -->
+        <div class="footer-section">
+           <div>
+              <div>توقيع العميل</div>
+              <div style="margin-top:40px; border-top:1px solid #ccc; width:120px;"></div>
+           </div>
+           <div>
+              ${agencyCachet ? `<img src="${agencyCachet}" class="stamp-img" />` : '<div class="stamp-box">Cachet Agence</div>'}
+           </div>
+        </div>
+
+      </body>
+      </html>
+      `;
       
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
       await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
-    } catch (error) { Alert.alert('Erreur', 'Impossible de générer le PDF'); } finally { setLoadingPdf(false); }
+    } catch (error) { 
+        console.error(error);
+        Alert.alert('Erreur', 'Impossible de générer le PDF'); 
+    } finally { setLoadingPdf(false); }
   };
 
   const isPaid = totals.grandTotal > 0 && totals.remaining <= 0;
@@ -401,7 +509,7 @@ export default function QuoteDetails({ route, navigation }) {
             </View>
             <View style={{ alignItems: 'flex-end' }}>
               <Text style={styles.clientLabelDark}>الأشخاص (Pax)</Text>
-              <Text style={styles.paxText}><Feather name="users" size={16} /> {totals.numPeople}</Text>
+              <Text style={styles.paxText}><Feather name="users" size={16} /> {totals.totalPax}</Text>
             </View>
           </View>
 
@@ -468,7 +576,7 @@ export default function QuoteDetails({ route, navigation }) {
           <View style={styles.divider} />
           <InfoRow label="الفترة" value={q.period} icon="calendar" />
           <InfoRow label="الطيران" value={q.transport} icon="send" />
-          <InfoRow label="التأشيرة" value={totals.visa > 0 ? 'Incluse' : 'Non incluse'} icon="file-text" />
+          <InfoRow label="التأشيرة" value={totals.visaCost > 0 ? 'Incluse' : 'Non incluse'} icon="file-text" />
         </DetailCard>
 
         {/* DETAILS HÔTELS */}

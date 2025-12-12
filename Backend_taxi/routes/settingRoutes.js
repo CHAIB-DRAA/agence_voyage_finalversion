@@ -7,6 +7,7 @@ const settingController = require('../controllers/settingController');
 // Récupérer tous les paramètres (groupés par catégorie)
 // GET /settings
 router.get('/', settingController.getSettings);
+router.post('/', settingController.addSetting);
 
 // Créer un nouveau paramètre
 // POST /settings

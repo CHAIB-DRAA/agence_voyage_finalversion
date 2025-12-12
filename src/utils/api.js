@@ -11,7 +11,7 @@ const getBaseUrl = () => {
   return 'http://10.0.2.2:3000';
 };
 
-const API_BASE_URL = "https://agence-voyage1.onrender.com"; 
+const API_BASE_URL = "https://agence-voyage-finalversion.onrender.com"; 
 console.log('🚀 [API] Cible détectée :', API_BASE_URL);
 
 // --- GESTION INTELLIGENTE DU TOKEN ---

@@ -69,6 +69,8 @@ const QuoteSchema = new mongoose.Schema({
   margin: { type: String, default: '0' },     // Bénéfice
   
   status: { type: String, enum: ['pending', 'confirmed', 'cancelled'], default: 'pending' },
+  statustraitement: { type: String, enum: ['traité', 'non-traité'], default: 'non-traité' },
+  
   notes: String,
   createdAt: { type: Date, default: Date.now }
 });

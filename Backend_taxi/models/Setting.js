@@ -1,24 +1,25 @@
 const mongoose = require('mongoose');
 
 const SettingSchema = new mongoose.Schema({
-  // La catégorie permet de trier (Destination, Transport, Config Agence...)
   category: { 
     type: String, 
     required: true, 
     enum: [
       'destination', 
       'period', 
-      'transport_main', // Vols
-      'transport_intercity', // Bus/Transferts
+      'transport_main', 
+      'transport_intercity', 
       'meal', 
-      'agency_info' // <--- AJOUT CRITIQUE ICI
+      'agency_info'
     ] 
   },
   
-  // Le nom visible (ex: "Makkah", "Turkish Airlines", "CCP: 123456")
-  label: { type: String, required: true },
+  label: { type: String, required: true }, // Ex: "Téléphone"
   
-  // Prix optionnel (pour les repas ou transports payants)
+  // NOUVEAU : Champ texte pour la valeur (Ex: "0550 12 34 56")
+  value: { type: String, default: '' }, 
+
+  // Champ numérique pour les prix
   price: { type: Number, default: 0 },
   
   isActive: { type: Boolean, default: true }

@@ -286,6 +286,79 @@ export default {
       return true;
     } catch (error) { throw error; }
   },
+// ============================================================
+  // 5. GESTION DES PARAMÈTRES (SETTINGS)
+  // ============================================================
+
+  getSettings: async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/settings`);
+      if (!response.ok) throw new Error('Erreur settings');
+      const json = await response.json();
+      
+      return {
+        destinations: json.destinations || [],
+        periods: json.periods || [],
+        transports: json.transports || [],
+        intercity: json.intercity || [],
+        meals: json.meals || [],
+        agency_info: json.agency_info || [] // S'assurer que cette ligne est présente
+      };
+    } catch (error) {
+      return { destinations: [], periods: [], transports: [], intercity: [], meals: [], agency_info: [] };
+    }
+  },
+
+  // MISE À JOUR : Ajout du paramètre optionnel 'value' (par défaut '')
+  addSetting: async (category, label, price = '0', value = '') => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/settings`, {
+        method: 'POST',
+        headers: headers,
+        // On inclut 'value' dans le corps de la requête JSON
+        body: JSON.stringify({ category, label, price, value }),
+      });
+      
+      if (!response.ok) {
+         const errorText = await response.text();
+         throw new Error(errorText || 'Erreur lors de l\'ajout');
+      }
+      
+      return await response.json();
+    } catch (error) { throw error; }
+  },
+
+  updateSetting: async (id, data) => {
+    try {
+      const headers = await getAuthHeaders();
+      // data contient déjà { label, price, value } si envoyé depuis AdminSettings
+      const response = await fetch(`${API_BASE_URL}/settings/${id}`, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(data),
+      });
+      
+      if (!response.ok) {
+         const errorText = await response.text();
+         throw new Error(errorText || 'Erreur lors de la modification');
+      }
+
+      return await response.json();
+    } catch (error) { throw error; }
+  },
+
+  deleteSetting: async (id) => {
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE_URL}/settings/${id}`, { 
+        method: 'DELETE',
+        headers: headers 
+      });
+      if (!response.ok) throw new Error('Erreur suppression');
+      return true;
+    } catch (error) { throw error; }
+  },
 
   // ============================================================
   // 5. GESTION DES PARAMÈTRES
@@ -302,20 +375,23 @@ export default {
         periods: json.periods || [],
         transports: json.transports || [],
         intercity: json.intercity || [],
-        meals: json.meals || []
+        meals: json.meals || [],
+        agency_info: json.agency_info || [] 
       };
     } catch (error) {
-      return { destinations: [], periods: [], transports: [], intercity: [], meals: [] };
+      return { destinations: [], periods: [], transports: [], intercity: [], meals: [], agency_info: [] };
     }
   },
 
-  addSetting: async (category, label, price = '0') => {
+  // MISE À JOUR : Ajout du paramètre 'value'
+  addSetting: async (category, label, price = '0', value = '') => {
     try {
       const headers = await getAuthHeaders();
       const response = await fetch(`${API_BASE_URL}/settings`, {
         method: 'POST',
         headers: headers,
-        body: JSON.stringify({ category, label, price }),
+        // On envoie 'value' au backend
+        body: JSON.stringify({ category, label, price, value }),
       });
       return await response.json();
     } catch (error) { throw error; }
@@ -324,6 +400,7 @@ export default {
   updateSetting: async (id, data) => {
     try {
       const headers = await getAuthHeaders();
+      // data contient déjà { label, price, value } grâce au composant AdminSettings
       const response = await fetch(`${API_BASE_URL}/settings/${id}`, {
         method: 'PUT',
         headers: headers,

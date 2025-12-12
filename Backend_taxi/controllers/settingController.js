@@ -12,7 +12,7 @@ exports.getSettings = async (req, res) => {
       transports: [],
       intercity: [],
       meals: [],
-      agency_info: [] // <--- Initialisation du tableau vide
+      agency_info: [] // Stockage des infos agence
     };
 
     settings.forEach(item => {
@@ -23,7 +23,7 @@ exports.getSettings = async (req, res) => {
         case 'transport_main': grouped.transports.push(item); break;
         case 'transport_intercity': grouped.intercity.push(item); break;
         case 'meal': grouped.meals.push(item); break;
-        case 'agency_info': grouped.agency_info.push(item); break; // <--- Remplissage
+        case 'agency_info': grouped.agency_info.push(item); break;
         default: break;
       }
     });
@@ -38,12 +38,14 @@ exports.getSettings = async (req, res) => {
 // POST: Ajouter un paramètre
 exports.addSetting = async (req, res) => {
   try {
-    const { category, label, price } = req.body;
+    // IMPORTANT : On récupère 'value' ici pour le texte libre
+    const { category, label, price, value } = req.body;
     
     // Validation basique
     if (!label || !category) return res.status(400).json({ error: "Label et catégorie requis" });
 
-    const newSetting = new Setting({ category, label, price });
+    // Création avec le champ value
+    const newSetting = new Setting({ category, label, price, value });
     const saved = await newSetting.save();
     
     res.json(saved);
@@ -53,25 +55,27 @@ exports.addSetting = async (req, res) => {
   }
 };
 
-// DELETE: Supprimer (Soft delete ou Hard delete selon préférence)
-exports.deleteSetting = async (req, res) => {
-  try {
-    await Setting.findByIdAndDelete(req.params.id);
-    res.json({ message: "Paramètre supprimé" });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
 // PUT: Modifier un paramètre
 exports.updateSetting = async (req, res) => {
   try {
+    // req.body contient { label, price, value... }
+    // Mongoose mettra à jour 'value' automatiquement grâce au $set
     const updated = await Setting.findByIdAndUpdate(
       req.params.id, 
       { $set: req.body }, 
       { new: true }
     );
     res.json(updated);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// DELETE: Supprimer
+exports.deleteSetting = async (req, res) => {
+  try {
+    await Setting.findByIdAndDelete(req.params.id);
+    res.json({ message: "Paramètre supprimé" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

@@ -1,15 +1,29 @@
 const mongoose = require('mongoose');
 
 const SettingSchema = new mongoose.Schema({
+  // La catégorie permet de trier (Destination, Transport, Config Agence...)
   category: { 
     type: String, 
     required: true, 
-    // Liste des catégories autorisées
-    enum: ['destination', 'period', 'transport_main', 'transport_intercity', 'meal'] 
+    enum: [
+      'destination', 
+      'period', 
+      'transport_main', // Vols
+      'transport_intercity', // Bus/Transferts
+      'meal', 
+      'agency_info' // <--- AJOUT CRITIQUE ICI
+    ] 
   },
-  label: { type: String, required: true }, // Exemple: "Ramadan", "Bus VIP"
-  price: { type: String, default: '0' },   // Prix optionnel
-  createdAt: { type: Date, default: Date.now }
+  
+  // Le nom visible (ex: "Makkah", "Turkish Airlines", "CCP: 123456")
+  label: { type: String, required: true },
+  
+  // Prix optionnel (pour les repas ou transports payants)
+  price: { type: Number, default: 0 },
+  
+  isActive: { type: Boolean, default: true }
+}, { 
+  timestamps: true 
 });
 
 module.exports = mongoose.model('Setting', SettingSchema);

@@ -35,7 +35,7 @@ const COLORS = {
 };
 const SPACING = { s: 8, m: 16, l: 24 };
 const FONT_SIZE = { s: 12, m: 14, l: 16, xl: 20, xxl: 24 };
-const AGENCY_CCP = "0000000000 00"; 
+const AGENCY_CCP_DEFAULT = "0000000000 00"; 
 
 // --- COMPOSANTS INTERNES ---
 const DetailCard = ({ title, icon, children, sideColor, style }) => (
@@ -100,9 +100,34 @@ export default function QuoteDetails({ route, navigation }) {
   const [newAdvanceAmount, setNewAdvanceAmount] = useState('');
   const [savingAdvance, setSavingAdvance] = useState(false);
 
+  // --- ETAT POUR LES INFOS AGENCE (NOUVEAU) ---
+  const [agencyInfo, setAgencyInfo] = useState([]);
+
   useEffect(() => {
     if(route.params?.quote) setQ(route.params.quote);
+    loadAgencySettings(); // On charge la config au montage
   }, [route.params?.quote]);
+
+  // Récupération des paramètres agence depuis le backend
+  const loadAgencySettings = async () => {
+    try {
+        const settings = await api.getSettings();
+        setAgencyInfo(settings.agency_info || []);
+    } catch (e) {
+        console.log("Erreur chargement infos agence", e);
+    }
+  };
+
+  // Helper intelligent pour trouver une valeur agence par mots-clés
+  const getAgencyVal = (keywords) => {
+      if (!agencyInfo.length) return null;
+      // On cherche l'élément dont le label contient un des mots clés
+      const item = agencyInfo.find(i => {
+          const label = i.label?.toLowerCase() || '';
+          return keywords.some(k => label.includes(k));
+      });
+      return item ? item.value : null;
+  };
 
   // Calculateur sécurisé
   const totals = useMemo(() => {
@@ -163,7 +188,6 @@ export default function QuoteDetails({ route, navigation }) {
     }
   };
 
-  // --- NOUVEAU : MISE À JOUR RAPIDE DE L'AVANCE ---
   const openAdvanceModal = () => {
     setNewAdvanceAmount(q.advanceAmount || '0');
     setEditAdvanceVisible(true);
@@ -176,17 +200,13 @@ export default function QuoteDetails({ route, navigation }) {
         const safeAdvance = parseInt(newAdvanceAmount) || 0;
         const newRemaining = safeTotal - safeAdvance;
 
-        // On prépare l'objet complet mis à jour
         const updatedQuote = { 
             ...q, 
             advanceAmount: String(safeAdvance),
             remainingAmount: String(newRemaining)
         };
 
-        // Sauvegarde API
         await api.saveQuote(updatedQuote);
-        
-        // Mise à jour UI locale
         setQ(updatedQuote);
         setEditAdvanceVisible(false);
         Alert.alert('Succès', 'Paiement mis à jour !');
@@ -198,7 +218,12 @@ export default function QuoteDetails({ route, navigation }) {
   };
 
   const handleCall = () => { if (q.clientPhone) { let phone = q.clientPhone.replace(/\D/g, ''); if (phone.startsWith('0')) phone = '213' + phone.substring(1); Linking.openURL(`tel:${phone}`); }};
-  const copyCCP = () => Alert.alert('CCP Agence', `Compte: ${AGENCY_CCP}\n(Copié dans le presse-papier)`);
+  
+  // Utilisation du CCP dynamique depuis les settings
+  const copyCCP = () => {
+      const dynamicCCP = getAgencyVal(['ccp', 'compte', 'rib']) || AGENCY_CCP_DEFAULT;
+      Alert.alert('CCP Agence', `Compte: ${dynamicCCP}\n(Copié dans le presse-papier)`);
+  };
   
   const shareToWhatsApp = () => {
     const text = `*🕋 عرض عمرة: ${q.destination}*\n👤 العميل: ${q.clientName} (${totals.numPeople} أشخاص)\n📅 الفترة: ${q.period}\n----------------\n🏨 *الإقامة:*\n📍 المدينة: ${q.hotelMedina || '---'}\n📍 مكة: ${q.hotelMakkah || '---'}${q.hotelJeddah ? `\n📍 جدة: ${q.hotelJeddah}` : ''}\n----------------\n✈️ الطيران: ${q.transport}\n💰 *المبلغ الإجمالي: ${totals.grandTotal.toLocaleString()} د.ج*\n✅ المدفوع: ${totals.advance.toLocaleString()} د.ج\n🔴 المتبقي: ${totals.remaining.toLocaleString()} د.ج${q.notes ? `\n----------------\n📝 ${q.notes}` : ''}`;
@@ -211,6 +236,14 @@ export default function QuoteDetails({ route, navigation }) {
     setLoadingPdf(true);
     try {
       const isClient = mode === 'client';
+      
+      // --- RECUPERATION DONNEES AGENCE ---
+      const agencyLogo = getAgencyVal(['logo', 'icon']);
+      const agencyName = getAgencyVal(['nom', 'name', 'agence']) || 'وكالة السفر';
+      const agencyPhone = getAgencyVal(['tél', 'phone', 'hatif']) || '';
+      const agencyAddress = getAgencyVal(['adresse', 'siège', 'address']) || '';
+      const agencyCachet = getAgencyVal(['cachet', 'tampon']);
+
       let tableRows = '';
       const addRow = (label, qty, price) => { if (!qty || qty === '0') return; tableRows += `<tr><td>${label}</td><td style="text-align:center">${qty}</td>${!isClient ? `<td class="price-col">${price} DA</td>` : ''}</tr>`; };
       
@@ -223,7 +256,46 @@ export default function QuoteDetails({ route, navigation }) {
 
       const costSummaryBlock = !isClient ? `<div class="section-title">تحليل الربحية (Interne)</div><div class="cost-summary"><div class="cost-row"><span>المبيعات (Total Vente)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="cost-row"><span>التكلفة (Total Coût)</span><strong>${totals.expenses.toLocaleString()} DA</strong></div>${totals.extraCosts > 0 ? `<div class="cost-row"><span>مصاريف إضافية (Extra)</span><strong>${totals.extraCosts.toLocaleString()} DA</strong></div>` : ''}<div class="cost-row" style="border-top:1px solid #ccc; margin-top:5px; padding-top:5px;"><span>الربح الصافي (Marge)</span><strong style="color:${totals.margin >= 0 ? '#27ae60' : '#c0392b'}; font-size: 16px;">${totals.margin.toLocaleString()} DA (${totals.marginPercent}%)</strong></div></div>` : '';
       
-      const htmlContent = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>body{font-family:'Helvetica',sans-serif;padding:40px;color:#333;direction:rtl;text-align:right}.header-container{border-bottom:3px solid #F3C764;padding-bottom:20px;margin-bottom:30px;display:flex;justify-content:space-between;align-items:center}.invoice-title{font-size:32px;color:#F3C764;font-weight:bold;margin:0}.agency-name{font-size:20px;font-weight:bold;color:#050B14;text-transform:uppercase}.client-box{background:#f8f9fa;padding:20px;border-radius:8px;margin-bottom:30px;border-right:5px solid #F3C764}.client-name{font-size:24px;font-weight:bold;color:#050B14}.section-title{font-size:18px;color:#050B14;font-weight:bold;margin-top:30px;margin-bottom:15px;border-bottom:1px solid #eee;padding-bottom:5px}table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:15px}th{background:#eee;padding:12px;text-align:right;font-weight:bold;color:#555}td{padding:15px 12px;border-bottom:1px solid #ddd}.total-box{margin-top:40px;background:#f9f9f9;padding:20px;border-radius:10px;border:1px solid #eee}.total-row{display:flex;justify-content:space-between;margin-bottom:10px;font-size:16px}.grand-total{font-size:24px;font-weight:900;color:#050B14;border-top:2px solid #F3C764;padding-top:10px}.passport-img{max-width:200px;max-height:150px;border:1px solid #ccc;margin-top:10px;display:block}.cost-summary{width:100%;background:#fffbe6;padding:15px;border-radius:8px;border:1px solid #eee}.cost-row{display:flex;justify-content:space-between;margin-bottom:5px}</style></head><body><div class="header-container"><div class="agency-name">وكالة السفر</div><h1 class="invoice-title">${isClient?'عرض سعر':'تقرير داخلي'}</h1></div><div class="client-box"><div style="color:#888;font-size:12px">العميل</div><div class="client-name">${q.clientName} (${totals.numPeople} أشخاص)</div><div>📞 ${q.clientPhone}</div>${!isClient&&q.passportImage?`<br/><strong>صورة الجواز:</strong><br/><img src="${q.passportImage}" class="passport-img"/>`:''}</div><div class="section-title">تفاصيل الرحلة</div><table><tr><td>الوجهة: <strong>${q.destination}</strong></td><td>الفترة: <strong>${q.period}</strong></td></tr><tr><td>الطيران: <strong>${q.transport}</strong></td><td>تأشيرة: <strong>${totals.visa>0?'نعم':'لا'}</strong></td></tr></table><div class="section-title">الإقامة</div><table><tr><td>المدينة: ${q.hotelMedina||'-'}</td><td>مكة: ${q.hotelMakkah||'-'}</td></tr>${q.hotelJeddah?`<tr><td colspan="2">جدة: ${q.hotelJeddah}</td></tr>`:''}</table><div class="section-title">الغرف</div><table><thead><tr><th>النوع</th><th style="text-align:center">العدد</th>${!isClient?'<th>S/Total</th>':''}</tr></thead><tbody>${tableRows}</tbody></table>${costSummaryBlock}<div class="total-box"><div class="total-row"><span>المبلغ الإجمالي (Total)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="total-row" style="color:#27ae60"><span>المدفوع (Avance)</span><strong>- ${totals.advance.toLocaleString()} DA</strong></div><div class="total-row grand-total" style="color:#c0392b"><span>المتبقي (Reste)</span><span>${totals.remaining.toLocaleString()} DA</span></div></div>${q.notes?`<div style="margin-top:20px;color:#666;"><strong>ملاحظات:</strong> ${q.notes}</div>`:''}</body></html>`;
+      // CSS et HTML mis à jour pour inclure l'en-tête Agence et le Cachet
+      const htmlContent = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><style>
+        body{font-family:'Helvetica',sans-serif;padding:40px;color:#333;direction:rtl;text-align:right}
+        .header-container{border-bottom:3px solid #F3C764;padding-bottom:20px;margin-bottom:30px;display:flex;justify-content:space-between;align-items:center}
+        .agency-info { display: flex; flex-direction: column; }
+        .agency-logo { max-height: 80px; max-width: 150px; margin-bottom: 10px; }
+        .agency-name{font-size:22px;font-weight:bold;color:#050B14;text-transform:uppercase}
+        .agency-details { font-size: 12px; color: #555; margin-top: 5px; }
+        .invoice-title{font-size:32px;color:#F3C764;font-weight:bold;margin:0}
+        .client-box{background:#f8f9fa;padding:20px;border-radius:8px;margin-bottom:30px;border-right:5px solid #F3C764}
+        .client-name{font-size:24px;font-weight:bold;color:#050B14}
+        .section-title{font-size:18px;color:#050B14;font-weight:bold;margin-top:30px;margin-bottom:15px;border-bottom:1px solid #eee;padding-bottom:5px}
+        table{width:100%;border-collapse:collapse;margin-bottom:20px;font-size:15px}
+        th{background:#eee;padding:12px;text-align:right;font-weight:bold;color:#555}
+        td{padding:15px 12px;border-bottom:1px solid #ddd}
+        .total-box{margin-top:40px;background:#f9f9f9;padding:20px;border-radius:10px;border:1px solid #eee}
+        .total-row{display:flex;justify-content:space-between;margin-bottom:10px;font-size:16px}
+        .grand-total{font-size:24px;font-weight:900;color:#050B14;border-top:2px solid #F3C764;padding-top:10px}
+        .passport-img{max-width:200px;max-height:150px;border:1px solid #ccc;margin-top:10px;display:block}
+        .cost-summary{width:100%;background:#fffbe6;padding:15px;border-radius:8px;border:1px solid #eee}
+        .cost-row{display:flex;justify-content:space-between;margin-bottom:5px}
+        .footer-stamp { margin-top: 50px; display: flex; justify-content: flex-end; }
+        .stamp-img { width: 150px; opacity: 0.8; transform: rotate(-10deg); }
+      </style></head><body>
+      
+      <div class="header-container">
+        <div class="agency-info">
+            ${agencyLogo ? `<img src="${agencyLogo}" class="agency-logo" />` : ''}
+            <div class="agency-name">${agencyName}</div>
+            <div class="agency-details">${agencyAddress} ${agencyPhone ? ' | 📞 ' + agencyPhone : ''}</div>
+        </div>
+        <h1 class="invoice-title">${isClient?'عرض سعر':'تقرير داخلي'}</h1>
+      </div>
+      
+      <div class="client-box"><div style="color:#888;font-size:12px">العميل</div><div class="client-name">${q.clientName} (${totals.numPeople} أشخاص)</div><div>📞 ${q.clientPhone}</div>${!isClient&&q.passportImage?`<br/><strong>صورة الجواز:</strong><br/><img src="${q.passportImage}" class="passport-img"/>`:''}</div><div class="section-title">تفاصيل الرحلة</div><table><tr><td>الوجهة: <strong>${q.destination}</strong></td><td>الفترة: <strong>${q.period}</strong></td></tr><tr><td>الطيران: <strong>${q.transport}</strong></td><td>تأشيرة: <strong>${totals.visa>0?'نعم':'لا'}</strong></td></tr></table><div class="section-title">الإقامة</div><table><tr><td>المدينة: ${q.hotelMedina||'-'}</td><td>مكة: ${q.hotelMakkah||'-'}</td></tr>${q.hotelJeddah?`<tr><td colspan="2">جدة: ${q.hotelJeddah}</td></tr>`:''}</table><div class="section-title">الغرف</div><table><thead><tr><th>النوع</th><th style="text-align:center">العدد</th>${!isClient?'<th>S/Total</th>':''}</tr></thead><tbody>${tableRows}</tbody></table>${costSummaryBlock}<div class="total-box"><div class="total-row"><span>المبلغ الإجمالي (Total)</span><strong>${totals.grandTotal.toLocaleString()} DA</strong></div><div class="total-row" style="color:#27ae60"><span>المدفوع (Avance)</span><strong>- ${totals.advance.toLocaleString()} DA</strong></div><div class="total-row grand-total" style="color:#c0392b"><span>المتبقي (Reste)</span><span>${totals.remaining.toLocaleString()} DA</span></div></div>${q.notes?`<div style="margin-top:20px;color:#666;"><strong>ملاحظات:</strong> ${q.notes}</div>`:''}
+      
+      ${agencyCachet ? `<div class="footer-stamp"><img src="${agencyCachet}" class="stamp-img" /></div>` : ''}
+      
+      </body></html>`;
+      
       const { uri } = await Print.printToFileAsync({ html: htmlContent });
       await Sharing.shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
     } catch (error) { Alert.alert('Erreur', 'Impossible de générer le PDF'); } finally { setLoadingPdf(false); }

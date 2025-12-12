@@ -4,7 +4,7 @@ import {
   SafeAreaView, StatusBar, Modal, ActivityIndicator, Alert, ScrollView, Platform, KeyboardAvoidingView, Image
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker'; // N'oublie pas : npx expo install expo-image-picker
+import * as ImagePicker from 'expo-image-picker'; 
 import api from '../utils/api';
 
 const COLORS = {
@@ -26,7 +26,7 @@ export default function AdminSettings({ navigation }) {
   
   const [modalVisible, setModalVisible] = useState(false);
   const [currentItem, setCurrentItem] = useState({ id: null, label: '', price: '', value: '', category: '' });
-  const [inputType, setInputType] = useState('text'); // 'text' ou 'image'
+  const [inputType, setInputType] = useState('text'); 
   const [saving, setSaving] = useState(false);
 
   const TABS = [
@@ -73,17 +73,15 @@ export default function AdminSettings({ navigation }) {
     return data.filter(item => item.label && item.label.toLowerCase().includes(searchQuery.toLowerCase()));
   };
 
-  // --- GESTION IMAGE ---
   const pickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsEditing: true,
       quality: 0.5,
-      base64: true, // Important pour envoyer au backend sans upload de fichier complexe
+      base64: true, 
     });
 
     if (!result.canceled && result.assets && result.assets.length > 0) {
-      // On crée une chaîne Base64 prête à l'emploi
       const base64Img = `data:image/jpeg;base64,${result.assets[0].base64}`;
       setCurrentItem(prev => ({ ...prev, value: base64Img }));
     }
@@ -125,7 +123,6 @@ export default function AdminSettings({ navigation }) {
   };
 
   const openEdit = (item) => {
-    // Détection auto si c'est une image
     const isImage = item.value && item.value.startsWith('data:image');
     setInputType(isImage ? 'image' : 'text');
 
@@ -148,8 +145,6 @@ export default function AdminSettings({ navigation }) {
   const renderItem = ({ item }) => {
     const showPrice = currentTabConfig.hasPrice && !!item.price && String(item.price) !== '0';
     const isAgency = activeTab === 'agency_info';
-    
-    // Vérification si la valeur est une image (Base64)
     const isImageValue = isAgency && item.value && item.value.startsWith('data:image');
 
     return (
@@ -159,13 +154,14 @@ export default function AdminSettings({ navigation }) {
         </View>
         
         <View style={{flex: 1, marginHorizontal: 10}}>
+          {/* Label affiché en gras (La Clé) */}
           <Text style={styles.itemTitle}>{item.label}</Text>
           
-          {/* AFFICHAGE IMAGE OU TEXTE */}
+          {/* Valeur affichée en dessous */}
           {isImageValue ? (
              <Image 
                source={{ uri: item.value }} 
-               style={{ width: 100, height: 50, marginTop: 5, borderRadius: 4, resizeMode: 'contain' }} 
+               style={{ width: 100, height: 50, marginTop: 5, borderRadius: 4, resizeMode: 'contain', alignSelf:'flex-end' }} 
              />
           ) : (
              isAgency && item.value ? <Text style={styles.itemValue} numberOfLines={2}>{item.value}</Text> : null
@@ -188,7 +184,6 @@ export default function AdminSettings({ navigation }) {
     );
   };
 
-  // Sécurisation condition prix
   const showModalPrice = activeTab !== 'agency_info' && (currentTabConfig.hasPrice || (!!currentItem.price && currentItem.price !== '0'));
 
   return (
@@ -268,15 +263,25 @@ export default function AdminSettings({ navigation }) {
               </TouchableOpacity>
             </View>
 
+            {/* MESSAGE D'AIDE POUR L'AGENCE */}
+            {activeTab === 'agency_info' && (
+              <View style={{backgroundColor: 'rgba(243, 199, 100, 0.1)', padding: 10, borderRadius: 8, marginBottom: 15}}>
+                <Text style={{color: COLORS.primary, fontSize: 12, textAlign: 'center'}}>
+                  💡 Créez une entrée distincte pour chaque info. {"\n"}
+                  Exemple : une entrée pour "Téléphone", une autre pour "Adresse".
+                </Text>
+              </View>
+            )}
+
             <View style={styles.formGroup}>
               <Text style={styles.label}>
-                 {activeTab === 'agency_info' ? "Titre (ex: Logo, Adresse)" : "Libellé / Nom"}
+                 {activeTab === 'agency_info' ? "Nom de l'info (La Clé)" : "Libellé / Nom"}
               </Text>
               <TextInput 
                 style={styles.input} 
                 value={currentItem.label} 
                 onChangeText={t => setCurrentItem({...currentItem, label: t})}
-                placeholder="Ex:..." 
+                placeholder={activeTab === 'agency_info' ? "Ex: Téléphone Officiel" : "Ex: Makkah..."} 
                 placeholderTextColor={COLORS.textDim}
               />
             </View>
@@ -288,25 +293,25 @@ export default function AdminSettings({ navigation }) {
                     style={[styles.typeBtn, inputType === 'text' && styles.typeBtnActive]}
                     onPress={() => setInputType('text')}
                  >
-                    <Text style={[styles.typeBtnText, inputType === 'text' && {color: COLORS.bg}]}>Texte (Adresse, Tél)</Text>
+                    <Text style={[styles.typeBtnText, inputType === 'text' && {color: COLORS.bg}]}>Texte</Text>
                  </TouchableOpacity>
                  <TouchableOpacity 
                     style={[styles.typeBtn, inputType === 'image' && styles.typeBtnActive]}
                     onPress={() => setInputType('image')}
                  >
-                    <Text style={[styles.typeBtnText, inputType === 'image' && {color: COLORS.bg}]}>Image (Logo, Cachet)</Text>
+                    <Text style={[styles.typeBtnText, inputType === 'image' && {color: COLORS.bg}]}>Image</Text>
                  </TouchableOpacity>
               </View>
             )}
 
             {activeTab === 'agency_info' && inputType === 'text' && (
               <View style={styles.formGroup}>
-                <Text style={styles.label}>Valeur Texte</Text>
+                <Text style={styles.label}>Contenu (La Valeur)</Text>
                 <TextInput 
                   style={[styles.input, {height: 80, textAlignVertical: 'top'}]} 
                   value={currentItem.value} 
                   onChangeText={t => setCurrentItem({...currentItem, value: t})}
-                  placeholder="Contenu..." 
+                  placeholder="Ex: 0661 12 34 56" 
                   placeholderTextColor={COLORS.textDim}
                   multiline
                 />
@@ -319,7 +324,7 @@ export default function AdminSettings({ navigation }) {
                 <TouchableOpacity style={styles.uploadBtn} onPress={pickImage}>
                    <Feather name="image" size={24} color={COLORS.primary} />
                    <Text style={{color: COLORS.textDim, marginLeft: 10}}>
-                      {currentItem.value && currentItem.value.startsWith('data:image') ? 'Image sélectionnée (Changer)' : 'Choisir depuis la galerie'}
+                      {currentItem.value && currentItem.value.startsWith('data:image') ? 'Image chargée (Changer)' : 'Choisir depuis la galerie'}
                    </Text>
                 </TouchableOpacity>
                 {currentItem.value && currentItem.value.startsWith('data:image') && (
@@ -374,7 +379,7 @@ const styles = StyleSheet.create({
   iconBox: { width: 40, height: 40, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
   itemTitle: { color: COLORS.text, fontSize: 16, fontWeight: '600', textAlign: 'right' },
   itemPrice: { color: COLORS.primary, fontSize: 14, fontWeight: 'bold', textAlign: 'right', marginTop: 4 },
-  itemValue: { color: '#AAA', fontSize: 13, textAlign: 'right', marginTop: 4 }, 
+  itemValue: { color: '#AAA', fontSize: 14, textAlign: 'right', marginTop: 4 }, 
   itemSub: { color: COLORS.textDim, fontSize: 10, textAlign: 'right', marginTop: 2, fontStyle: 'italic' },
   actions: { flexDirection: 'row', gap: 10 },
   actionBtn: { padding: 8, borderRadius: 8, backgroundColor: 'rgba(255,255,255,0.05)' },
@@ -392,8 +397,6 @@ const styles = StyleSheet.create({
   currencySuffix: { color: COLORS.primary, marginLeft: 10, fontWeight: 'bold' },
   saveBtn: { backgroundColor: COLORS.primary, padding: 16, borderRadius: 12, alignItems: 'center', marginTop: 10 },
   saveText: { color: COLORS.bg, fontWeight: 'bold', fontSize: 16 },
-  
-  // Styles spécifiques Agence
   typeBtn: { flex: 1, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: COLORS.border, alignItems: 'center' },
   typeBtnActive: { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
   typeBtnText: { color: COLORS.textDim, fontWeight: 'bold', fontSize: 12 },
